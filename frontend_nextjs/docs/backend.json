@@ -1,0 +1,296 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user account within the MindView Canvas application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user account."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username of the user."
+        },
+        "registrationDate": {
+          "type": "string",
+          "description": "Date and time when the user registered.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "username",
+        "registrationDate"
+      ]
+    },
+    "Mindmap": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Mindmap",
+      "type": "object",
+      "description": "Represents a mind map created or imported by a user.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the mind map."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Mindmap).  The user who owns this mind map."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the mind map."
+        },
+        "creationDate": {
+          "type": "string",
+          "description": "Date and time when the mind map was created.",
+          "format": "date-time"
+        },
+        "lastModifiedDate": {
+          "type": "string",
+          "description": "Date and time when the mind map was last modified.",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "string",
+          "description": "The data of the mindmap, it can be json string or any string."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "creationDate",
+        "lastModifiedDate",
+        "data"
+      ]
+    },
+    "Test": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Test",
+      "type": "object",
+      "description": "Represents a test or quiz available in the application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the test."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the test (e.g., 'Midterm Exam 1', 'THPTQG Math')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of what the test is about"
+        },
+        "creationDate": {
+          "type": "string",
+          "description": "Date and time when the test was created.",
+          "format": "date-time"
+        },
+        "testData": {
+          "type": "string",
+          "description": "The test data, it can be json string or any string."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "creationDate",
+        "testData"
+      ]
+    },
+    "UserTestResult": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserTestResult",
+      "type": "object",
+      "description": "Represents a user's result on a specific test.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the test result."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N UserTestResult). The user who took the test."
+        },
+        "testId": {
+          "type": "string",
+          "description": "Reference to Test. (Relationship: Test 1:N UserTestResult). The test that was taken."
+        },
+        "score": {
+          "type": "number",
+          "description": "The user's score on the test."
+        },
+        "completionDate": {
+          "type": "string",
+          "description": "Date and time when the test was completed.",
+          "format": "date-time"
+        },
+        "incorrectQuestionIds": {
+          "type": "array",
+          "description": "A list of Ids of question the user answered incorrectly.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "testId",
+        "score",
+        "completionDate"
+      ]
+    },
+    "IncorrectQuestion": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "IncorrectQuestion",
+      "type": "object",
+      "description": "Represents a question that a user answered incorrectly, along with related learning resources.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the incorrect question record."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. The user who answered the question incorrectly."
+        },
+        "questionId": {
+          "type": "string",
+          "description": "Identifier of the question that was answered incorrectly. (this id should be find in Test.testData)"
+        },
+        "topic": {
+          "type": "string",
+          "description": "The math topic to which the incorrectly answered question relates."
+        },
+        "relatedExerciseIds": {
+          "type": "array",
+          "description": "References to exercises that can help the user improve on this topic. (These ids should be find in Test.testData)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "questionId",
+        "topic"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information.  Path-based ownership ensures only the user can access their own profile.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/mindmaps/{mindmapId}",
+        "definition": {
+          "entityName": "Mindmap",
+          "schema": {
+            "$ref": "#/backend/entities/Mindmap"
+          },
+          "description": "Stores mind maps created by the user. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "mindmapId",
+              "description": "The unique identifier for the mind map."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/tests/{testId}",
+        "definition": {
+          "entityName": "Test",
+          "schema": {
+            "$ref": "#/backend/entities/Test"
+          },
+          "description": "Stores tests available in the application.",
+          "params": [
+            {
+              "name": "testId",
+              "description": "The unique identifier for the test."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/testResults/{testResultId}",
+        "definition": {
+          "entityName": "UserTestResult",
+          "schema": {
+            "$ref": "#/backend/entities/UserTestResult"
+          },
+          "description": "Stores user's test results. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "testResultId",
+              "description": "The unique identifier for the test result."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/incorrectQuestions/{incorrectQuestionId}",
+        "definition": {
+          "entityName": "IncorrectQuestion",
+          "schema": {
+            "$ref": "#/backend/entities/IncorrectQuestion"
+          },
+          "description": "Stores questions answered incorrectly by the user. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "incorrectQuestionId",
+              "description": "The unique identifier for the incorrect question."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support user authentication, mind map storage, test creation, and tracking of user test results, focusing on authorization independence and efficient data retrieval. User data and associated entities like Mindmaps, Test Results, and Incorrect Questions are stored under user-specific paths to ensure data privacy and security. Tests are stored in a global collection.  This segregation supports QAPs for listing tests available to all users. To enable Authorization Independence and avoid `get()` calls in security rules, the userId is denormalized into every subcollection belonging to the User. The structure leverages path-based ownership for private user data. The structure also supports tracking incorrect questions and associating them with related learning exercises. This is achieved through the /users/{userId}/incorrectQuestions/{incorrectQuestionId} path, where incorrect questions specific to each user are stored."
+  }
+}
