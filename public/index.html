@@ -1,35 +1,50 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trang Web Firebase của tôi</title>
+
     </head>
 <body>
-    <div id="app">...</div>
+
+    <h1>Chào mừng bạn!</h1>
+    <p>Trang web Firebase của tôi đã hoạt động.</p>
+    <div id="app">
+        </div>
 
 
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-storage-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-functions-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-analytics-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-performance-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-remote-config-compat.js"></script>
+
     <script>
-      // ===== BẮT ĐẦU NỘI DUNG TỪ INIT.JS CỦA BẠN =====
-      
+      // TODO: THAY THẾ BẰNG CẤU HÌNH FIREBASE CỦA BẠN
       const firebaseConfig = {
-        apiKey: "...", // Điền key của bạn
-        authDomain: "...", // Điền domain của bạn
-        projectId: "...", // Điền project id của bạn
-        storageBucket: "...",
-        messagingSenderId: "...",
-        appId: "...",
-        measurementId: "..." // (Nếu có)
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.appspot.com",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID",
+        // measurementId: "YOUR_MEASUREMENT_ID" // (Không bắt buộc)
       };
 
       // Khởi tạo Firebase
-      firebase.initializeApp(firebaseConfig);
-      
-      // (Bất kỳ code nào khác có trong init.js của bạn)
-
-      // ===== KẾT THÚC NỘI DUNG TỪ INIT.JS =====
+      try {
+        firebase.initializeApp(firebaseConfig);
+        console.log("Firebase đã được khởi tạo thành công!");
+      } catch (e) {
+        console.error("Lỗi khởi tạo Firebase:", e);
+      }
     </script>
 
     </body>
