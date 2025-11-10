@@ -16,14 +16,15 @@ import {
   SidebarFooter
 } from '@/components/ui/sidebar';
 import { 
-  BrainCircuit, 
-  MessageSquare, 
-  FileText, 
+  BrainCircuit,
+  MessageSquare,
+  FileText,
   Home,
   History,
   LogOut,
   LogIn,
-  User
+  User,
+  Database
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -47,6 +48,11 @@ const menuItems = [
     title: 'Trợ lý AI',
     icon: MessageSquare,
     href: '/chat',
+  },
+  {
+    title: 'Kho tài liệu',
+    icon: Database,
+    href: '/documents/upload',
   },
   {
     title: 'Luyện đề',
