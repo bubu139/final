@@ -2,17 +2,20 @@
 import uvicorn
 import json
 import os
+import tempfile
+import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware  
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import PyPDF2
 from docx import Document
 
 # Import config
 from .ai_config import genai
+from .rag import ingest_document, retrieve_context
 
 # ===== DOCUMENT PROCESSING =====
 
@@ -319,6 +322,20 @@ class ChatInputSchema(BaseModel):
     history: List = []
     media: Optional[List[MediaPart]] = None
 
+class DocumentUploadResult(BaseModel):
+    filename: str
+    document_id: Optional[str] = None
+    chunks: int = 0
+    token_estimate: int = 0
+    skipped: bool = False
+    reason: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class DocumentUploadResponse(BaseModel):
+    documents: List[DocumentUploadResult]
+
+
 class GenerateExercisesInput(BaseModel):
     topic: str
     difficulty: str = "medium"
@@ -395,19 +412,60 @@ async def handle_chat(request: ChatInputSchema):
             "top_k": 40,
             "max_output_tokens": 8192,
         }
-        
+
         model = genai.GenerativeModel(
             'gemini-2.0-flash-exp',
             generation_config=generation_config,
             system_instruction=CHAT_SYSTEM_INSTRUCTION
         )
-        
+
+        rag_context = []
+        try:
+            rag_context = retrieve_context(request.message)
+        except Exception as retrieval_error:
+            print(f"RAG retrieval failed: {retrieval_error}")
+
+        formatted_context = []
+        for index, match in enumerate(rag_context, start=1):
+            metadata = match.get("metadata") or {}
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+
+            title = metadata.get("doc_title") or metadata.get("source") or "Tài liệu tham khảo"
+            chunk_text_content = match.get("content", "")
+            if chunk_text_content:
+                formatted_context.append(f"[Đoạn {index} - {title}]\n{chunk_text_content}")
+
+        context_prompt = ""
+        if formatted_context:
+            context_prompt = (
+                "Các đoạn tài liệu tham khảo được tìm thấy trong cơ sở tri thức:\n"
+                + "\n\n".join(formatted_context)
+                + "\n\nHãy ưu tiên sử dụng thông tin ở trên để trả lời câu hỏi của học sinh. "
+                  "Nếu thông tin chưa đủ, hãy dựa trên kiến thức chung và ghi chú rõ ràng."
+            )
+
+        if context_prompt:
+            composed_prompt = (
+                f"{context_prompt}\n\n"
+                f"Câu hỏi của học sinh: {request.message}\n\n"
+                "Khi sử dụng tài liệu, hãy trích dẫn theo định dạng \"Theo tài liệu [tiêu đề]\" "
+                "và giữ phong cách gia sư đã được mô tả trong system instruction."
+            )
+        else:
+            composed_prompt = request.message
+
         if request.media:
-            prompt_parts = [request.message]
+            prompt_parts = [composed_prompt]
+            for media in request.media:
+                prompt_parts.append({"media": {"url": media.url}})
             response = model.generate_content(prompt_parts, stream=True)
         else:
-            response = model.generate_content(request.message, stream=True)
-        
+            response = model.generate_content(composed_prompt, stream=True)
+
         return StreamingResponse(
             stream_generator(response),
             media_type="text/plain; charset=utf-8"
@@ -415,6 +473,85 @@ async def handle_chat(request: ChatInputSchema):
     except Exception as e:
         print(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/documents/upload", response_model=DocumentUploadResponse)
+async def handle_upload_documents(
+    files: List[UploadFile] = File(...),
+    topic: Optional[str] = Form(None),
+):
+    """Upload, chunk, embed, and store documents in Supabase for RAG."""
+
+    results: List[DocumentUploadResult] = []
+
+    for upload in files:
+        filename = upload.filename or "tai-lieu-khong-ten"
+        try:
+            file_bytes = await upload.read()
+            if not file_bytes:
+                results.append(
+                    DocumentUploadResult(
+                        filename=filename,
+                        skipped=True,
+                        reason="Tệp không có dữ liệu.",
+                    )
+                )
+                continue
+
+            suffix = Path(filename).suffix or ".pdf"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                tmp_file.write(file_bytes)
+                tmp_path = tmp_file.name
+
+            try:
+                extracted_text = extract_text_from_file(tmp_path)
+            finally:
+                os.unlink(tmp_path)
+
+            if not extracted_text.strip():
+                results.append(
+                    DocumentUploadResult(
+                        filename=filename,
+                        skipped=True,
+                        reason="Không thể trích xuất nội dung từ tài liệu.",
+                    )
+                )
+                continue
+
+            document_id = str(uuid.uuid4())
+            metadata: Dict[str, Any] = {"source": filename}
+            if topic:
+                metadata["topic"] = topic
+
+            ingestion_summary = ingest_document(
+                document_id=document_id,
+                title=filename,
+                text=extracted_text,
+                metadata=metadata,
+            )
+
+            results.append(
+                DocumentUploadResult(
+                    filename=filename,
+                    document_id=document_id,
+                    chunks=ingestion_summary.get("chunks", 0),
+                    token_estimate=ingestion_summary.get("token_estimate", 0),
+                    metadata=metadata,
+                )
+            )
+
+        except Exception as exc:
+            print(f"Document ingestion failed for {filename}: {exc}")
+            results.append(
+                DocumentUploadResult(
+                    filename=filename,
+                    skipped=True,
+                    reason=str(exc),
+                )
+            )
+
+    return DocumentUploadResponse(documents=results)
+
 
 @app.post("/api/generate-exercises")
 async def handle_generate_exercises(request: GenerateExercisesInput):
