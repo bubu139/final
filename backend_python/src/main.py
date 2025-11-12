@@ -368,7 +368,7 @@ async def root():
     return {
         "status": "ok", 
         "message": "Math Tutor API with PDF & Word Support",
-        "model": "gemini-2.0-flash-exp",
+        "model": "gemini-2.5-flash",
         "supported_formats": ["PDF (.pdf)", "Word (.docx, .doc)"],
         "endpoints": [
             "/api/chat",
@@ -397,7 +397,7 @@ async def handle_chat(request: ChatInputSchema):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=CHAT_SYSTEM_INSTRUCTION
         )
@@ -428,7 +428,7 @@ async def handle_generate_exercises(request: GenerateExercisesInput):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=EXERCISE_SYSTEM_INSTRUCTION
         )
@@ -491,7 +491,7 @@ async def handle_generate_test(request: GenerateTestInput):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=TEST_SYSTEM_INSTRUCTION
         )
@@ -653,7 +653,7 @@ async def handle_summarize_topic(request: SummarizeTopicInput):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=SUMMARIZE_SYSTEM_INSTRUCTION
         )
@@ -700,7 +700,7 @@ async def handle_geogebra(request: GeogebraInputSchema):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=GEOGEBRA_SYSTEM_INSTRUCTION
         )
@@ -737,7 +737,7 @@ async def handle_analyze_test_result(request: AnalyzeTestResultInput):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
         )
         
@@ -868,7 +868,7 @@ async def handle_generate_adaptive_test(request: GenerateAdaptiveTestInput):
         }
         
         model = genai.GenerativeModel(
-            'gemini-2.0-flash-exp',
+            'gemini-2.5-flash',
             generation_config=generation_config,
             system_instruction=TEST_SYSTEM_INSTRUCTION
         )
