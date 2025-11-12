@@ -3,19 +3,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUser } from '@/supabase/auth/use-user';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader } from 'lucide-react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-// import { auth } from '@/firebase/config'; // <-- ĐÃ XÓA
-import { useAuth } from '@/firebase'; // <-- ĐÃ THÊM
+import { useSupabase } from '@/supabase';
 
 export default function LoginPage() {
   const { user, isUserLoading, error: userError } = useUser();
-  const auth = useAuth(); // <-- LẤY AUTH TỪ CONTEXT
+  const { client: supabase, error: supabaseError } = useSupabase();
   const router = useRouter();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,14 +51,11 @@ export default function LoginPage() {
   const handleEmailPasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // --- ĐÃ SỬA ---
-    // Kiểm tra 'auth' lấy từ hook useAuth()
-    if (!auth) {
+    if (!supabase) {
       setError('Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.');
       return;
     }
-    // --- KẾT THÚC SỬA ---
-    
+
     setIsLoading(true);
     setError('');
 
@@ -68,13 +63,18 @@ export default function LoginPage() {
 
     try {
       if (isLogin) {
-        // Đăng nhập
         console.log('📝 Signing in...');
-        const userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
-        console.log('✅ Signed in successfully:', userCredential.user.email);
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        if (signInError) {
+          throw signInError;
+        }
+
         router.push('/');
       } else {
-        // Đăng ký
         console.log('📝 Signing up...');
         if (formData.password !== formData.confirmPassword) {
           setError('Mật khẩu xác nhận không khớp');
@@ -88,46 +88,28 @@ export default function LoginPage() {
           return;
         }
 
-        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        console.log('✅ Signed up successfully:', userCredential.user.email);
-        router.push('/');
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        if (signUpError) {
+          throw signUpError;
+        }
+
+        if (data.session) {
+          router.push('/');
+        } else {
+          setError('Đăng ký thành công. Vui lòng kiểm tra email để xác nhận tài khoản.');
+        }
       }
-    } catch (error: any) {
-      console.error('❌ Authentication error:', error);
-      
-      // Hiển thị chi tiết lỗi để debug
-      console.log('🔍 Error details:', {
-        code: error.code,
-        message: error.message
-      });
-      
-      switch (error.code) {
-        case 'auth/invalid-email':
-          setError('Email không hợp lệ');
-          break;
-        case 'auth/user-disabled':
-          setError('Tài khoản đã bị vô hiệu hóa');
-          break;
-        case 'auth/user-not-found':
-          setError('Tài khoản không tồn tại');
-          break;
-        case 'auth/wrong-password':
-          setError('Mật khẩu không đúng');
-          break;
-        case 'auth/email-already-in-use':
-          setError('Email đã được sử dụng');
-          break;
-        case 'auth/weak-password':
-          setError('Mật khẩu quá yếu');
-          break;
-        case 'auth/network-request-failed':
-          setError('Lỗi kết nối mạng. Vui lòng kiểm tra internet');
-          break;
-        case 'auth/too-many-requests':
-          setError('Quá nhiều yêu cầu. Vui lòng thử lại sau');
-          break;
-        default:
-          setError(`Lỗi: ${error.message}`);
+    } catch (err: any) {
+      console.error('❌ Authentication error:', err);
+
+      if (typeof err?.message === 'string') {
+        setError(err.message);
+      } else {
+        setError('Không thể xác thực. Vui lòng thử lại.');
       }
     } finally {
       setIsLoading(false);
@@ -140,12 +122,14 @@ export default function LoginPage() {
   };
 
   // Hiển thị lỗi nếu có vấn đề với auth
-  if (userError) {
+  const blockingError = userError || supabaseError;
+
+  if (blockingError) {
     return (
       <main className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4 p-4 text-center">
           <div className="text-red-500 text-lg">❌ Lỗi hệ thống</div>
-          <p className="text-sm text-muted-foreground">{userError}</p>
+          <p className="text-sm text-muted-foreground">{blockingError}</p>
           <Button onClick={() => window.location.reload()} variant="outline">
             Thử lại
           </Button>

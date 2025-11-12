@@ -27,8 +27,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
-import { initiateSignOut } from '@/firebase/auth/sign-out';
+import { useUser } from '@/supabase/auth/use-user';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 
@@ -57,11 +56,14 @@ const menuItems = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, isUserLoading } = useUser();
+  const { user, isUserLoading, logout } = useUser();
 
-  const handleSignOut = () => {
-    // Gọi trực tiếp initiateSignOut mà không cần auth parameter
-    initiateSignOut();
+  const handleSignOut = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   return (
@@ -133,11 +135,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <p className="text-xs text-muted-foreground">Đã đăng nhập</p>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="w-full"
-                  onClick={handleSignOut}
+                  onClick={() => { void handleSignOut(); }}
                 >
                   <LogOut className="w-4 h-4 mr-2" />
                   Đăng xuất

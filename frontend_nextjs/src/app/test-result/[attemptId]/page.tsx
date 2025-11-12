@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
-import { useFirestore } from '@/firebase';
+import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import type { TestAttempt, WeakTopic } from '@/types/test-history';
 import type { Test } from '@/types/test-schema';
@@ -18,7 +18,7 @@ export default function TestResultPage() {
   const params = useParams();
   const router = useRouter();
   const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
   
   const attemptId = Array.isArray(params.attemptId) ? params.attemptId[0] : params.attemptId;
   
@@ -29,41 +29,52 @@ export default function TestResultPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isUserLoading) return;
-    
+    if (isUserLoading || !isInitialized) return;
+
     if (!user) {
       router.push('/login');
       return;
     }
 
-    
+    if (supabaseError) {
+      setError(supabaseError);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setError('Không thể kết nối tới Supabase. Vui lòng thử lại sau.');
+      setIsLoading(false);
+      return;
+    }
+
     if (!attemptId) {
-        setError('ID bài kiểm tra không hợp lệ');
-        setIsLoading(false);
-        return;
-      }
+      setError('ID bài kiểm tra không hợp lệ');
+      setIsLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        const historyService = new TestHistoryService(firestore);
-        
+        const historyService = new TestHistoryService(supabase);
+
         // Load attempt
         const attemptData = await historyService.getAttemptById(attemptId);
         if (!attemptData) {
           throw new Error('Không tìm thấy kết quả bài kiểm tra');
         }
-        
-        if (attemptData.userId !== user.uid) {
+
+        if (attemptData.userId !== user.id) {
           throw new Error('Bạn không có quyền xem kết quả này');
         }
-        
+
         setAttempt(attemptData);
-        
+
         // Load weak topics analysis
-        const analysis = await historyService.analyzeWeakTopics(user.uid);
+        const analysis = await historyService.analyzeWeakTopics(user.id);
         setWeakTopics(analysis.weakTopics);
         
         // Re-generate test data (hoặc load từ cache nếu có)
@@ -92,7 +103,7 @@ export default function TestResultPage() {
     };
 
     loadData();
-  }, [attemptId, user, isUserLoading, firestore, router]);
+  }, [attemptId, user, isUserLoading, isInitialized, supabase, supabaseError, router]);
 
   const handleRetakeTest = () => {
     if (attempt) {
@@ -104,9 +115,11 @@ export default function TestResultPage() {
     if (!user) return;
     
     try {
-      const historyService = new TestHistoryService(firestore);
-      const analysis = await historyService.analyzeWeakTopics(user.uid);
-      
+      if (!supabase) return;
+
+      const historyService = new TestHistoryService(supabase);
+      const analysis = await historyService.analyzeWeakTopics(user.id);
+
       const weakTopicNames = analysis.weakTopics.map(t => t.topic);
       
       router.push(`/tests/adaptive?topics=${encodeURIComponent(weakTopicNames.join(','))}`);

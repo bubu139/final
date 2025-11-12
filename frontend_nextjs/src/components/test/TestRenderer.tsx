@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUser } from '@/supabase/auth/use-user';
 // KHÔNG CẦN import useFirestore hay TestHistoryService nữa
 import type { Test, Question } from '@/types/test-schema';
 import type { TestAttempt, WeakTopic } from '@/types/test-history'; // <-- Import WeakTopic
@@ -149,7 +149,7 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
         id: `local-${Date.now()}`,
         testId: testId,
         testTitle: testData.title,
-        userId: user ? user.uid : 'guest_user',
+        userId: user ? user.id : 'guest_user',
         answers: answeredQuestions,
         score: score,
         correctAnswers: correctCount,

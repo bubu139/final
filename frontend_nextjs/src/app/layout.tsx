@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { AppShell } from '@/components/app-shell';
 import Script from 'next/script';
-import { FirebaseClientProvider } from '@/firebase';
+import { SupabaseClientProvider } from '@/supabase';
 
 export const metadata: Metadata = {
   title: 'MindView Canvas',
@@ -13,12 +13,12 @@ export const metadata: Metadata = {
 // Tách component client thành phần riêng
 function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <FirebaseClientProvider>
+    <SupabaseClientProvider>
       <AppShell>
         {children}
       </AppShell>
       <Toaster />
-    </FirebaseClientProvider>
+    </SupabaseClientProvider>
   );
 }
 
