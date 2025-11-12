@@ -42,3 +42,16 @@ export type WeakTopic = {
   // --- SỬA LỖI Ở ĐÂY ---
   lastAttempt?: Date; // <-- Thêm dấu '?' để cho phép nó là tùy chọn
 };
+
+export type TestAnalysis = {
+  weakTopics: WeakTopic[];
+  totalAttempts: number;
+  averageScore: number;
+  improvementRate: number;
+};
+
+export type AIRecommendation = {
+  userId: string;
+  content: string;
+  generatedAt: Date;
+};

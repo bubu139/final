@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
-import { useFirestore } from '@/firebase';
+import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import { TestRenderer } from '@/components/test/TestRenderer';
 import type { Test } from '@/types/test-schema';
@@ -19,7 +19,7 @@ export default function AdaptiveTestContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
 
   const [test, setTest] = useState<Test | null>(null);
   const [weakTopics, setWeakTopics] = useState<string[]>([]);
@@ -27,10 +27,22 @@ export default function AdaptiveTestContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isUserLoading) return;
-    
+    if (isUserLoading || !isInitialized) return;
+
     if (!user) {
       router.push('/login');
+      return;
+    }
+
+    if (supabaseError) {
+      setError(supabaseError);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setError('Không thể kết nối tới Supabase. Vui lòng thử lại sau.');
+      setIsLoading(false);
       return;
     }
 
@@ -39,26 +51,21 @@ export default function AdaptiveTestContent() {
       setError(null);
 
       try {
-        // Check if firestore is available
-        if (!firestore) {
-          throw new Error('Không thể kết nối đến cơ sở dữ liệu. Vui lòng thử lại.');
-        }
-
         // Get topics from URL or analyze user history
         let topicsToFocus: string[] = [];
         const topicsParam = searchParams.get('topics');
-        
+
         if (topicsParam) {
           topicsToFocus = topicsParam.split(',');
         } else {
           // Analyze user history to find weak topics
-          const historyService = new TestHistoryService(firestore);
-          const analysis = await historyService.analyzeWeakTopics(user.uid);
-          
+          const historyService = new TestHistoryService(supabase);
+          const analysis = await historyService.analyzeWeakTopics(user.id);
+
           if (analysis.weakTopics.length === 0) {
             throw new Error('Bạn chưa có điểm yếu rõ ràng. Hãy làm thêm một vài bài kiểm tra!');
           }
-          
+
           topicsToFocus = analysis.weakTopics.slice(0, 3).map(t => t.topic);
         }
 
@@ -69,7 +76,7 @@ export default function AdaptiveTestContent() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: user.uid,
+            userId: user.id,
             weakTopics: topicsToFocus,
             difficulty: 'medium',
           }),
@@ -92,7 +99,7 @@ export default function AdaptiveTestContent() {
     };
 
     loadAdaptiveTest();
-  }, [user, isUserLoading, firestore, router, searchParams]);
+  }, [user, isUserLoading, isInitialized, supabase, supabaseError, router, searchParams]);
 
   const handleRetry = () => {
     window.location.reload();

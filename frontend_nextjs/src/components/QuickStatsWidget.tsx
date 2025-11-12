@@ -2,9 +2,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useUser } from '@/firebase/auth/use-user';
-import { useFirestore } from '@/firebase';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Award, TrendingUp, Clock, ArrowRight } from 'lucide-react';
@@ -12,8 +11,8 @@ import Link from 'next/link';
 
 export function QuickStatsWidget() {
   const { user } = useUser();
-  const firestore = useFirestore();
-  
+  const { client: supabase } = useSupabase();
+
   const [stats, setStats] = useState<{
     recentScore: number | null;
     totalTests: number;
@@ -25,56 +24,62 @@ export function QuickStatsWidget() {
     totalTime: 0,
     trend: 'neutral'
   });
-  
+
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !firestore) {
+    if (!user || !supabase) {
       setIsLoading(false);
       return;
     }
 
     const loadQuickStats = async () => {
       try {
-        const attemptsRef = collection(firestore, 'testAttempts');
-        const q = query(
-          attemptsRef,
-          where('userId', '==', user.uid),
-          orderBy('completedAt', 'desc'),
-          limit(5)
-        );
-        
-        const snapshot = await getDocs(q);
-        const attempts = snapshot.docs.map(doc => doc.data());
-        
+        setIsLoading(true);
+
+        const { data, error } = await supabase
+          .from('test_attempts')
+          .select('score, time_spent, completed_at')
+          .eq('user_id', user.id)
+          .order('completed_at', { ascending: false })
+          .limit(5);
+
+        if (error) {
+          throw error;
+        }
+
+        const attempts = data ?? [];
+
         if (attempts.length === 0) {
           setIsLoading(false);
+          setStats({ recentScore: null, totalTests: 0, totalTime: 0, trend: 'neutral' });
           return;
         }
 
-        const recentScore = attempts[0].score;
+        const recentScore = Number(attempts[0].score ?? 0);
         const totalTests = attempts.length;
-        const totalTime = attempts.reduce((sum, a) => sum + (a.timeSpent || 0), 0);
-        
+        const totalTime = attempts.reduce((sum, attempt) => sum + Number(attempt.time_spent ?? 0), 0);
+
         // Tính xu hướng
         let trend: 'up' | 'down' | 'neutral' = 'neutral';
         if (attempts.length >= 2) {
-          const recent = attempts[0].score;
-          const previous = attempts[1].score;
+          const recent = Number(attempts[0].score ?? 0);
+          const previous = Number(attempts[1].score ?? 0);
           if (recent > previous + 5) trend = 'up';
           else if (recent < previous - 5) trend = 'down';
         }
-        
+
         setStats({ recentScore, totalTests, totalTime, trend });
       } catch (error) {
         console.error("Error loading quick stats:", error);
+        setStats({ recentScore: null, totalTests: 0, totalTime: 0, trend: 'neutral' });
       } finally {
         setIsLoading(false);
       }
     };
 
     loadQuickStats();
-  }, [user, firestore]);
+  }, [user, supabase]);
 
   if (!user) {
     return (

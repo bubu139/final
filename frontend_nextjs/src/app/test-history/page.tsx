@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useUser } from '@/firebase/auth/use-user';
-import { useFirestore } from '@/firebase';
+import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import type { TestAttempt, TestAnalysis } from '@/types/test-history';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,42 +24,57 @@ import { useRouter } from 'next/navigation';
 
 export default function TestHistoryPage() {
   const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
   const router = useRouter();
-  
+
   const [attempts, setAttempts] = useState<TestAttempt[]>([]);
   const [analysis, setAnalysis] = useState<TestAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isUserLoading) return;
-    
+    if (isUserLoading || !isInitialized) return;
+
     if (!user) {
       router.push('/login');
+      return;
+    }
+
+    if (supabaseError) {
+      setLoadError(supabaseError);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setLoadError('Không thể kết nối tới Supabase.');
+      setIsLoading(false);
       return;
     }
 
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const historyService = new TestHistoryService(firestore);
-        
+        const historyService = new TestHistoryService(supabase);
+
         // Load attempts
-        const userAttempts = await historyService.getUserAttempts(user.uid, 20);
+        const userAttempts = await historyService.getUserAttempts(user.id, 20);
         setAttempts(userAttempts);
-        
+
         // Load analysis
-        const userAnalysis = await historyService.analyzeWeakTopics(user.uid);
+        const userAnalysis = await historyService.analyzeWeakTopics(user.id);
         setAnalysis(userAnalysis);
+        setLoadError(null);
       } catch (error) {
         console.error('Error loading test history:', error);
+        setLoadError('Không thể tải lịch sử làm bài. Vui lòng thử lại sau.');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, [user, isUserLoading, firestore, router]);
+  }, [user, isUserLoading, isInitialized, supabase, supabaseError, router]);
 
   const getScoreColor = (score: number) => {
     if (score >= 90) return 'text-green-600 bg-green-50';
@@ -84,7 +99,7 @@ export default function TestHistoryPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (isUserLoading || isLoading) {
+  if (isUserLoading || !isInitialized || isLoading) {
     return (
       <main className="flex items-center justify-center h-full">
         <div className="text-center">
@@ -109,6 +124,14 @@ export default function TestHistoryPage() {
             Xem lại kết quả các bài kiểm tra và theo dõi tiến độ học tập của bạn
           </p>
         </div>
+
+        {loadError && (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardContent className="p-4 text-destructive">
+              {loadError}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Statistics Overview */}
         {analysis && (
