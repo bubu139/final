@@ -15,15 +15,16 @@ import {
   SidebarHeader,
   SidebarFooter
 } from '@/components/ui/sidebar';
-import { 
-  BrainCircuit, 
-  MessageSquare, 
-  FileText, 
+import {
+  BrainCircuit,
+  MessageSquare,
+  FileText,
   Home,
   History,
   LogOut,
   LogIn,
-  User
+  User as UserIcon,
+  UserRound
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -52,6 +53,11 @@ const menuItems = [
     icon: FileText,
     href: '/tests',
   },
+  {
+    title: 'Trang cá nhân',
+    icon: UserRound,
+    href: '/user',
+  },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -73,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarHeader className="border-b p-4">
             <div className="flex items-center gap-2">
               <BrainCircuit className="w-6 h-6 text-primary" />
-              <span className="font-headline font-bold text-lg">MindView Canvas</span>
+              <span className="font-headline font-bold text-lg">MathMentor</span>
             </div>
           </SidebarHeader>
 
@@ -125,7 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                   <Avatar className="w-8 h-8">
                     <AvatarFallback className="bg-primary text-primary-foreground">
-                      <User className="w-4 h-4" />
+                      <UserIcon className="w-4 h-4" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">

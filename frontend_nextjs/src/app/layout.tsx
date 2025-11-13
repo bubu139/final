@@ -6,8 +6,8 @@ import Script from 'next/script';
 import { SupabaseClientProvider } from '@/supabase';
 
 export const metadata: Metadata = {
-  title: 'MindView Canvas',
-  description: 'An interactive mind map visualization tool.',
+  title: 'MathMentor',
+  description: 'Nền tảng học toán kết hợp gia sư AI, mindmap và luyện đề cá nhân hóa.',
 };
 
 // Tách component client thành phần riêng
