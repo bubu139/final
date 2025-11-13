@@ -24,7 +24,8 @@ import {
   LogOut,
   LogIn,
   User as UserIcon,
-  UserRound
+  UserRound,
+  FolderKanban
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -52,6 +53,11 @@ const menuItems = [
     title: 'Luyện đề',
     icon: FileText,
     href: '/tests',
+  },
+  {
+    title: 'Kho tài liệu',
+    icon: FolderKanban,
+    href: '/library',
   },
   {
     title: 'Trang cá nhân',

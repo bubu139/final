@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, BrainCircuit, MessageSquare, FileText, UserRound, GitMerge, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, BrainCircuit, MessageSquare, FileText, UserRound, GitMerge, ShieldCheck, Sparkles, FileUp } from "lucide-react";
 import Link from "next/link";
 
 const features = [
@@ -29,6 +29,14 @@ const features = [
     cta: "Luyện đề ngay",
   },
   {
+    title: "Kho tài liệu cá nhân",
+    description:
+      "Upload file PDF/DOCX, hệ thống tự động lập chỉ mục trên Supabase và sẵn sàng cho pipeline RAG khi bạn dùng AI chat.",
+    icon: FileUp,
+    href: "/library",
+    cta: "Tải tài liệu",
+  },
+  {
     title: "Trang cá nhân MathMentor",
     description:
       "Tổng hợp tiến độ, biểu đồ kĩ năng, lịch sử bài làm và các mục tiêu mới để giáo viên và học sinh cùng theo dõi.",
@@ -40,19 +48,19 @@ const features = [
 
 const pipelines = [
   {
-    title: "Phân luồng câu hỏi",
+    title: "Luồng 1: Trả lời có kiểm chứng",
     description:
-      "Mỗi yêu cầu được chia thành hai nhánh: sinh lời giải hướng dẫn và tạo lệnh vẽ hình GeoGebra khi phát hiện yếu tố hình học/hàm số.",
+      "Ngay sau khi nhận câu hỏi, MathMentor chạy RAG để truy xuất tài liệu (bao gồm file bạn upload), sau đó gọi Gemini để tổng hợp lời giải Socratic, kiểm tra chéo với dữ liệu Google và trình bày theo cấu trúc mục lớn/nhỏ rõ ràng.",
   },
   {
-    title: "Đối chiếu dữ liệu",
+    title: "Luồng 2: Sinh lệnh GeoGebra",
     description:
-      "RAG truy xuất kiến thức nội bộ, Gemini kiểm chứng chéo để loại bỏ ảo giác trước khi hiển thị, bảo đảm độ chính xác của lời giải.",
+      "Luồng song song nhận diện bài toán có đồ thị hoặc hình học, suy luận cách dựng hình, tạo duy nhất chuỗi câu lệnh GeoGebra và chỉ reset canvas khi bạn chuyển sang bài mới hoặc yêu cầu chỉnh sửa.",
   },
   {
-    title: "Lưu vết học tập",
+    title: "Đồng bộ Mindmap & kiểm tra",
     description:
-      "Các điểm mạnh, hạn chế và kiến thức cần ôn được ghi vào kho dữ liệu cá nhân và đồng bộ với Mindmap, bài kiểm tra và dashboard.",
+      "Điểm mạnh/yếu, kiến thức cần học được ghi nhận liên tục để cập nhật mindmap, gợi ý bài tập và tự động điều chỉnh ngân hàng đề.",
   },
 ];
 
