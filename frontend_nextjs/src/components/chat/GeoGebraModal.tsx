@@ -58,9 +58,12 @@ CHỈ TRẢ VỀ: <thinking>...</thinking> sau đó là các lệnh GeoGebra thu
 interface GeoGebraModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  autoPrompt?: string | null;
+  autoCommands?: string[];
+  onConsumeAutoCommands?: () => void;
 }
 
-export function GeoGebraModal({ isOpen, onOpenChange }: GeoGebraModalProps) {
+export function GeoGebraModal({ isOpen, onOpenChange, autoPrompt, autoCommands, onConsumeAutoCommands }: GeoGebraModalProps) {
   const [geogebraPrompt, setGeogebraPrompt] = useState('');
   const [isGeogebraLoading, setIsGeogebraLoading] = useState(false);
   const ggbAppletRef = useRef<any>(null);
@@ -68,6 +71,7 @@ export function GeoGebraModal({ isOpen, onOpenChange }: GeoGebraModalProps) {
   const [isGgbReady, setIsGgbReady] = useState(false);
   const [geogebraError, setGeogebraError] = useState<string | null>(null);
   const [resultCommands, setResultCommands] = useState<string | null>(null);
+  const lastAutoCommandsRef = useRef<string>('');
   
   const [ggbNode, setGgbNode] = useState<HTMLDivElement | null>(null);
   const ggbContainerRef = useCallback((node: HTMLDivElement) => {
@@ -82,6 +86,12 @@ export function GeoGebraModal({ isOpen, onOpenChange }: GeoGebraModalProps) {
   // ✅ THÊM state để retry
   const [retryCount, setRetryCount] = useState(0);
 
+
+  useEffect(() => {
+    if (autoPrompt) {
+      setGeogebraPrompt(autoPrompt);
+    }
+  }, [autoPrompt]);
 
   // Load GeoGebra script
   useEffect(() => {
@@ -316,6 +326,7 @@ export function GeoGebraModal({ isOpen, onOpenChange }: GeoGebraModalProps) {
     setGeogebraPrompt('');
     setGeogebraError(null);
     setResultCommands(null);
+    lastAutoCommandsRef.current = '';
   };
   
   // ✅ CẬP NHẬT: Handle Retry
@@ -335,6 +346,25 @@ export function GeoGebraModal({ isOpen, onOpenChange }: GeoGebraModalProps) {
 
   // ✅ Sửa logic loading: Chỉ show loading khi MỞ
   const showLoading = isOpen && (!isGgbScriptLoaded || !isGgbReady) && !geogebraError;
+
+  useEffect(() => {
+    if (!isOpen || !isGgbReady) return;
+    if (!autoCommands || autoCommands.length === 0) return;
+    const serialized = autoCommands.join('\n');
+    if (lastAutoCommandsRef.current === serialized) return;
+    try {
+      autoCommands.forEach((command) => {
+        if (ggbAppletRef.current) {
+          ggbAppletRef.current.evalCommand(command);
+        }
+      });
+      setResultCommands(serialized);
+      lastAutoCommandsRef.current = serialized;
+      onConsumeAutoCommands?.();
+    } catch (error) {
+      console.error('❌ Không thể chạy lệnh GeoGebra tự động', error);
+    }
+  }, [autoCommands, isGgbReady, isOpen, onConsumeAutoCommands]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>

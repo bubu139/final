@@ -33,6 +33,10 @@ export function MindMapCanvas({ data, onNodeClick }: MindMapCanvasProps) {
   const [viewTransform, setViewTransform] = useState({ scale: 1, x: 0, y: 0 });
 
   useEffect(() => {
+    setNodes(initializeNodes(data));
+  }, [data]);
+
+  useEffect(() => {
     if (canvasRef.current) {
       const resizeObserver = new ResizeObserver(entries => {
         if (entries[0]) {

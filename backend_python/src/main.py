@@ -4,10 +4,9 @@ import json
 import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware  
-from pydantic import BaseModel
-from typing import List, Optional
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 import PyPDF2
 from docx import Document
 
@@ -237,7 +236,39 @@ Nếu học sinh thực sự bị mắc kẹt:
 
 ---
 
-**Phương châm**: "Một AI gia sư giỏi không phải là người giải bài nhanh nhất, mà là người giúp học sinh TỰ TIN giải bài một mình!" 🎓;"""  
+**Phương châm**: "Một AI gia sư giỏi không phải là người giải bài nhanh nhất, mà là người giúp học sinh TỰ TIN giải bài một mình!" 🎓;"""
+
+CHAT_RESPONSE_BLUEPRINT = """Bạn luôn trả lời ở định dạng JSON với 3 khóa chính:
+{
+  "reply": "Tin nhắn hội thoại. Giải thích kiến thức nền, gợi ý tư duy từng bước, nhắc học sinh tự kiểm tra và đặt câu hỏi kế tiếp.",
+  "mindmap_insights": [
+    {
+      "node_id": "slug-khong-dau",
+      "parent_node_id": "ung-dung-dao-ham" | "tinh-don-dieu" | "cuc-tri" | "max-min",
+      "label": "Tên node súc tích",
+      "type": "topic" | "subtopic" | "concept",
+      "weakness_summary": "Mô tả ngắn lỗ hổng kiến thức hoặc kỹ năng học sinh chưa chắc",
+      "action_steps": ["Gợi ý 1", "Gợi ý 2" (tối đa 3 câu hướng dẫn thực hành cụ thể)]
+    }
+  ],
+  "geogebra": {
+    "should_draw": true | false,
+    "reason": "Giải thích vì sao cần đồ thị/hình học (chuỗi rỗng nếu không cần)",
+    "prompt": "Mô tả ngắn để gửi cho AI vẽ hình",
+    "commands": ["Danh sách lệnh GeoGebra hợp lệ. Chỉ có giá trị khi should_draw = true"]
+  }
+}
+
+YÊU CẦU:
+1. "reply" phải tham chiếu lịch sử cuộc trò chuyện, bổ sung lý thuyết cần thiết để học sinh tự giải, kèm 1-2 câu hỏi gợi mở.
+2. "mindmap_insights" phản ánh điểm yếu rút ra từ cả lịch sử và câu trả lời mới nhất. Nếu không có điểm mới thì trả về mảng rỗng.
+   - Chỉ dùng các parent_node_id đã có trong mindmap lớp 12: "ung-dung-dao-ham" (gốc), "tinh-don-dieu", "cuc-tri", "max-min".
+   - node_id phải dạng slug, duy nhất.
+3. "geogebra":
+   - Nếu câu hỏi liên quan đồ thị hàm số hoặc hình học không gian/phẳng cần hình minh họa thì should_draw = true, cung cấp prompt ngắn + ít nhất 3 commands.
+   - Nếu không cần hình, đặt should_draw = false, reason = "", commands = [].
+4. Luôn trả về JSON hợp lệ (không markdown, không giải thích ngoài).
+"""
 
 GEOGEBRA_SYSTEM_INSTRUCTION = """Bạn là một chuyên gia GeoGebra, chuyên chuyển đổi mô tả bằng ngôn ngữ tự nhiên thành các lệnh GeoGebra hợp lệ.
 
@@ -314,9 +345,30 @@ app.add_middleware(
 class MediaPart(BaseModel):
     url: str
 
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class MindmapInsight(BaseModel):
+    node_id: str
+    parent_node_id: Optional[str] = None
+    label: str
+    type: Literal["topic", "subtopic", "concept"] = "concept"
+    weakness_summary: Optional[str] = None
+    action_steps: Optional[List[str]] = None
+
+
+class GeogebraInstruction(BaseModel):
+    should_draw: bool = False
+    reason: Optional[str] = None
+    prompt: Optional[str] = None
+    commands: Optional[List[str]] = None
+
+
 class ChatInputSchema(BaseModel):
     message: str
-    history: List = []
+    history: List[ConversationTurn] = Field(default_factory=list)
     media: Optional[List[MediaPart]] = None
 
 class GenerateExercisesInput(BaseModel):
@@ -355,12 +407,6 @@ class GenerateAdaptiveTestInput(BaseModel):
 
 # ===== HELPER FUNCTIONS =====
 
-async def stream_generator(text_generator):
-    """Convert generator to async generator for streaming"""
-    for chunk in text_generator:
-        if hasattr(chunk, 'text') and chunk.text:
-            yield chunk.text
-
 # ===== ENDPOINTS =====
 
 @app.get("/")
@@ -394,6 +440,7 @@ async def handle_chat(request: ChatInputSchema):
             "top_p": 0.95,
             "top_k": 40,
             "max_output_tokens": 8192,
+            "response_mime_type": "application/json"
         }
         
         model = genai.GenerativeModel(
@@ -402,16 +449,53 @@ async def handle_chat(request: ChatInputSchema):
             system_instruction=CHAT_SYSTEM_INSTRUCTION
         )
         
+        conversation_history = []
+        for turn in request.history:
+            if not turn.content:
+                continue
+            conversation_history.append({
+                "role": turn.role,
+                "parts": [{"text": turn.content}]
+            })
+
+        user_prompt = f"""{CHAT_RESPONSE_BLUEPRINT}\n\nHọc sinh vừa hỏi: {request.message}"""
+        user_parts = [{"text": user_prompt}]
+
         if request.media:
-            prompt_parts = [request.message]
-            response = model.generate_content(prompt_parts, stream=True)
-        else:
-            response = model.generate_content(request.message, stream=True)
-        
-        return StreamingResponse(
-            stream_generator(response),
-            media_type="text/plain; charset=utf-8"
-        )
+            for media in request.media:
+                user_parts.append({"media": {"url": media.url}})
+
+        contents = conversation_history + [{"role": "user", "parts": user_parts}]
+        response = model.generate_content(contents)
+
+        raw_text = response.text if hasattr(response, 'text') else None
+        if not raw_text:
+            raise ValueError("Model không trả về phản hồi")
+
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError:
+            payload = {"reply": raw_text}
+
+        mindmap_data = payload.get("mindmap_insights")
+        if not isinstance(mindmap_data, list):
+            mindmap_data = []
+
+        geogebra_block = payload.get("geogebra") or {}
+        normalized_geogebra = {
+            "should_draw": bool(geogebra_block.get("should_draw")),
+            "reason": geogebra_block.get("reason") or "",
+            "prompt": geogebra_block.get("prompt") or request.message,
+            "commands": geogebra_block.get("commands") if isinstance(geogebra_block.get("commands"), list) else []
+        }
+
+        reply_text = payload.get("reply") or payload.get("message") or raw_text
+
+        return {
+            "reply": reply_text,
+            "mindmap_insights": mindmap_data,
+            "geogebra": normalized_geogebra
+        }
     except Exception as e:
         print(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
