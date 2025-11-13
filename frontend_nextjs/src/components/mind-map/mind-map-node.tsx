@@ -23,6 +23,7 @@ export function MindMapNode({ node, position, onToggle, onDragStart, onClick }: 
   
   const isRoot = node.level === 0;
   const hasChildren = node.children.length > 0;
+  const accentColor = node.color || (isRoot ? 'hsl(var(--primary))' : '#0f172a');
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
@@ -51,10 +52,10 @@ export function MindMapNode({ node, position, onToggle, onDragStart, onClick }: 
     >
       <Card
         className={cn(
-          'group min-w-64 text-center shadow-lg hover:shadow-xl transition-all duration-300 border-2 hover:border-primary/80',
-          isRoot ? 'border-primary' : 'border-transparent',
+          'group min-w-64 text-center shadow-lg hover:shadow-xl transition-all duration-300 border-2',
           node.isExpanded ? 'border-primary/50' : ''
         )}
+        style={{ borderColor: accentColor }}
       >
         <CardContent className="p-3 flex items-center gap-3">
           <div className={cn(
@@ -64,12 +65,12 @@ export function MindMapNode({ node, position, onToggle, onDragStart, onClick }: 
             <Share2 className={cn(
                 "w-5 h-5",
                 isRoot ? "text-primary" : "text-primary/80"
-              )} />
+              )} style={{ color: accentColor }} />
           </div>
           <div className={cn(
             "font-semibold text-base font-headline text-card-foreground text-left",
             isRoot ? "text-lg" : ""
-            )}>
+            )} style={{ color: accentColor }}>
             <ReactMarkdown
               className="prose dark:prose-invert max-w-none text-sm leading-relaxed prose-p:my-0"
               components={{ p: ({node, ...props}) => <p style={{margin: 0}} {...props} /> }}

@@ -5,6 +5,8 @@ export interface MindMapNode {
     type: 'topic' | 'subtopic' | 'concept';
     children: MindMapNode[];
     color?: string;
+    description?: string;
+    recommendations?: string[];
   }
 
   export interface MindMapNodeWithState extends MindMapNode {

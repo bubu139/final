@@ -90,8 +90,25 @@ export function NodeDetailDialog({ node, isOpen, onClose }: NodeDetailDialogProp
         </DialogHeader>
         <ScrollArea className="flex-1 px-6">
             <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed">
+                {node.description && (
+                  <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                    {node.description}
+                  </div>
+                )}
+                {node.recommendations && node.recommendations.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <BrainCircuit className="w-4 h-4 text-green-600" /> Lộ trình tự luyện được AI đề xuất
+                    </h4>
+                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                      {node.recommendations.map((rec, index) => (
+                        <li key={index}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <h3 className="flex items-center gap-2 font-semibold text-md mb-2">
-                  <Sparkles className="w-5 h-5 text-yellow-500" /> 
+                  <Sparkles className="w-5 h-5 text-yellow-500" />
                   Kiến thức liên quan
                 </h3>
                 {isSummaryLoading ? (

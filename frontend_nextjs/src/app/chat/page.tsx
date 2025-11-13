@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 // import remarkMath from 'remark-math'; // <-- BƯỚC 1: XÓA IMPORT NÀY
 import { cn } from '@/lib/utils';
@@ -11,6 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { API_BASE_URL } from '@/lib/utils';
 import { GeoGebraModal } from '@/components/chat/GeoGebraModal';
+import Link from 'next/link';
+import { MindmapInsightPayload, upsertMindmapInsights } from '@/lib/mindmap-storage';
 
 type Message = {
   text: string;
@@ -22,6 +26,36 @@ type AttachedFile = {
   name: string;
   type: string;
   content: string;
+};
+
+type ApiMindmapInsight = {
+  node_id: string;
+  parent_node_id?: string | null;
+  label: string;
+  type: 'topic' | 'subtopic' | 'concept';
+  weakness_summary?: string;
+  action_steps?: string[];
+  color?: string;
+};
+
+type ApiGeogebraResponse = {
+  should_draw?: boolean;
+  reason?: string;
+  prompt?: string;
+  commands?: string[];
+};
+
+type ChatApiResponse = {
+  reply: string;
+  mindmap_insights?: ApiMindmapInsight[];
+  geogebra?: ApiGeogebraResponse;
+};
+
+type GeogebraSuggestion = {
+  prompt: string;
+  reason: string;
+  commands: string[];
+  consumed?: boolean;
 };
 
 const latexSymbols = [
@@ -42,6 +76,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [mindmapUpdates, setMindmapUpdates] = useState<MindmapInsightPayload[]>([]);
+  const [geogebraSuggestion, setGeogebraSuggestion] = useState<GeogebraSuggestion | null>(null);
   
   const [isModalOpen, setIsModalOpen] = useState(false); 
 
@@ -74,24 +110,32 @@ export default function ChatPage() {
     if (e) e.preventDefault();
     if (!input.trim() && attachedFiles.length === 0) return;
 
-    const userMessageText = input.trim() || '📎 Đã gửi file đính kèm';
-    const userMessage: Message = { text: userMessageText, isUser: true, files: attachedFiles };
-    
+    const normalizedInput = input.trim();
+    const userVisibleText = normalizedInput || '📎 Đã gửi file đính kèm để AI phân tích';
+    const userMessage: Message = { text: userVisibleText, isUser: true, files: attachedFiles };
+
+    const historyPayload = messages
+      .filter(message => message.text.trim())
+      .map(message => ({
+        role: message.isUser ? 'user' : 'assistant',
+        content: message.text
+      }));
+
     setIsLoading(true);
-    setMessages(prev => [...prev, userMessage, { text: '', isUser: false }]);
-    
-    const currentInput = input;
+    setMessages(prev => [...prev, userMessage]);
+
     const currentFiles = attachedFiles;
+    const apiMessage = normalizedInput || 'Học sinh vừa gửi tài liệu/hình ảnh. Hãy hỏi lại để hiểu đề rồi hướng dẫn các bước giải.';
     setInput('');
     setAttachedFiles([]);
-    
+
     try {
       const media = currentFiles.map(file => ({ url: file.content }));
 
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput, media }),
+        body: JSON.stringify({ message: apiMessage, media, history: historyPayload }),
       });
 
       if (!response.ok) {
@@ -99,45 +143,55 @@ export default function ChatPage() {
         try {
           const errorResult = await response.json();
           errorText = errorResult.detail || errorResult.error || errorText;
-        } catch (e) {
-          console.error("Failed to parse error response JSON", e);
+        } catch (err) {
+          console.error('Failed to parse error response JSON', err);
           errorText = response.statusText;
         }
         throw new Error(errorText);
       }
-      
-      if (!response.body) {
-        throw new Error('Response body is empty.');
+
+      const result: ChatApiResponse = await response.json();
+      const assistantMessage: Message = {
+        text: result.reply || 'Mình đang gặp sự cố khi phản hồi. Bạn thử hỏi lại giúp mình nhé!',
+        isUser: false
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+
+      if (Array.isArray(result.mindmap_insights) && result.mindmap_insights.length > 0) {
+        const normalized: MindmapInsightPayload[] = result.mindmap_insights
+          .filter((node): node is ApiMindmapInsight => Boolean(node && node.node_id && node.label))
+          .map(node => ({
+            nodeId: node.node_id,
+            parentNodeId: node.parent_node_id ?? null,
+            label: node.label,
+            type: node.type,
+            weaknessSummary: node.weakness_summary,
+            actionSteps: node.action_steps,
+            color: node.color,
+          }));
+        if (normalized.length > 0) {
+          setMindmapUpdates(normalized);
+          upsertMindmapInsights(normalized);
+        }
+      } else {
+        setMindmapUpdates([]);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage && !lastMessage.isUser) {
-            newMessages[newMessages.length - 1] = { ...lastMessage, text: lastMessage.text + chunk };
-          }
-          return newMessages;
+      const geoBlock = result.geogebra;
+      if (geoBlock?.should_draw && geoBlock.commands && geoBlock.commands.length > 0) {
+        setGeogebraSuggestion({
+          prompt: geoBlock.prompt || apiMessage,
+          reason: geoBlock.reason || 'AI khuyên bạn dựng hình/đồ thị để trực quan hóa bài toán.',
+          commands: geoBlock.commands,
+          consumed: false,
         });
+      } else {
+        setGeogebraSuggestion(null);
       }
     } catch (error: any) {
       console.error('Error fetching chat response:', error);
-      setMessages(prev => {
-        const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
-        if (lastMessage && !lastMessage.isUser) {
-          newMessages[newMessages.length - 1].text = `Đã có lỗi xảy ra: ${error.message}`;
-        }
-        return newMessages;
-      });
+      setMessages(prev => [...prev, { text: `Đã có lỗi xảy ra: ${error.message || 'Không xác định'}`, isUser: false }]);
     } finally {
       setIsLoading(false);
     }
@@ -286,9 +340,8 @@ export default function ChatPage() {
                     </AvatarFallback>
                   </Avatar>
                 )}
-                <div className={cn("max-w-[75%] rounded-2xl p-4 shadow-md", 
-                  message.isUser ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white" : "bg-white border border-blue-100",
-                  !message.text && !message.isUser && "hidden"
+                <div className={cn("max-w-[75%] rounded-2xl p-4 shadow-md",
+                  message.isUser ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white" : "bg-white border border-blue-100"
                 )}>
                   {/* BƯỚC 1: XÓA remarkPlugins */}
                   <ReactMarkdown className="prose dark:prose-invert max-w-none text-sm leading-relaxed prose-p:my-2"
@@ -307,14 +360,6 @@ export default function ChatPage() {
                       ))}
                     </div>
                   )}
-
-                  {isLoading && !message.isUser && index === messages.length - 1 && (
-                    <div className="flex gap-2 items-center mt-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                  )}
                 </div>
                 {message.isUser && (
                   <Avatar className="w-10 h-10 border-2 border-white shadow-md">
@@ -325,6 +370,81 @@ export default function ChatPage() {
                 )}
               </div>
             ))}
+            {isLoading && (
+              <div className="flex items-start gap-3">
+                <Avatar className="w-10 h-10 border-2 border-white shadow-md">
+                  <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-500">
+                    <Bot className="w-6 h-6 text-white" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3 shadow-md flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  <span className="text-sm text-muted-foreground">AI đang phân tích toàn bộ cuộc trò chuyện...</span>
+                </div>
+              </div>
+            )}
+            {geogebraSuggestion && (
+              <Card className="border-blue-200 bg-white/90 shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-blue-600" /> GeoGebra đã sẵn sàng
+                  </CardTitle>
+                  <Badge variant="outline" className="text-xs">{geogebraSuggestion.commands.length} lệnh</Badge>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  <p>{geogebraSuggestion.reason}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" onClick={() => setIsModalOpen(true)}>
+                      Mở GeoGebra
+                    </Button>
+                    <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => setGeogebraSuggestion(null)}>
+                      Ẩn gợi ý
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {mindmapUpdates.length > 0 && (
+              <Card className="border-amber-200 bg-amber-50/70 shadow-md">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Share2 className="w-4 h-4 text-amber-500" /> Mindmap vừa được cập nhật
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    {mindmapUpdates.map((node) => (
+                      <div key={node.nodeId} className="p-3 rounded-xl bg-white/80 border border-amber-100">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm">{node.label}</span>
+                          <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">{node.type.toUpperCase()}</Badge>
+                        </div>
+                        {node.weaknessSummary && (
+                          <p className="text-xs text-muted-foreground mt-1">{node.weaknessSummary}</p>
+                        )}
+                        {node.actionSteps && node.actionSteps.length > 0 && (
+                          <ul className="text-xs text-blue-700 mt-2 list-disc list-inside space-y-1">
+                            {node.actionSteps.map((step, index) => (
+                              <li key={index}>{step}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline">
+                      <Link href="/mindmap">Xem mindmap</Link>
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setMindmapUpdates([])}>
+                      Đã ghi nhớ
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <div ref={endRef} />
            </div>
       </div>
@@ -426,8 +546,14 @@ export default function ChatPage() {
         <Compass className="w-7 h-7" />
       </Button>
 
-      <GeoGebraModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} />
-      
+      <GeoGebraModal
+        isOpen={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        autoPrompt={geogebraSuggestion?.prompt}
+        autoCommands={!geogebraSuggestion?.consumed ? geogebraSuggestion?.commands : undefined}
+        onConsumeAutoCommands={() => setGeogebraSuggestion(prev => prev ? { ...prev, consumed: true } : prev)}
+      />
+
     </div>
   );
 }
