@@ -1,0 +1,166 @@
+{
+  "platform": "supabase",
+  "auth": {
+    "providers": ["email", "google"],
+    "notes": "Supabase Auth được dùng cho toàn bộ ứng dụng; mọi bảng đều bật RLS và ràng buộc user_id."
+  },
+  "entities": {
+    "student_profiles": {
+      "description": "Thông tin hồ sơ và mức độ thành thạo tổng quan của từng học sinh.",
+      "columns": {
+        "id": "uuid PRIMARY KEY references auth.users",
+        "full_name": "text",
+        "grade_level": "text",
+        "avatar_url": "text",
+        "strengths": "jsonb",
+        "weaknesses": "jsonb",
+        "learning_stats": "jsonb",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()"
+      }
+    },
+    "chat_sessions": {
+      "description": "Phiên AI chat của học sinh, gắn với mindmap và phân tích.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "user_id": "uuid references auth.users",
+        "topic": "text",
+        "status": "text", 
+        "summary": "text",
+        "weak_signals": "jsonb",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "chat_messages": {
+      "description": "Tin nhắn (học sinh / AI) trong một session, lưu LaTeX đã chuẩn hóa.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "session_id": "uuid references chat_sessions",
+        "sender": "text check (sender in ('student','ai','system'))",
+        "content": "text",
+        "latex_payload": "jsonb",
+        "is_geometry_prompt": "boolean",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "drawing_instructions": {
+      "description": "Kịch bản vẽ hình được Gemini trả về cho Geogebra iframe.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "session_id": "uuid references chat_sessions",
+        "question_hash": "text",
+        "ggb_script": "text",
+        "render_state": "jsonb",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "knowledge_snippets": {
+      "description": "Kho tài nguyên RAG (vector) thu thập từ tài liệu giáo khoa & lịch sử học cá nhân.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "owner_id": "uuid references auth.users",
+        "source_type": "text", 
+        "title": "text",
+        "content": "text",
+        "embedding": "vector(1536)",
+        "metadata": "jsonb",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "mindmaps": {
+      "description": "Mindmap gốc của từng học sinh.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "user_id": "uuid references auth.users",
+        "title": "text",
+        "root_node_id": "uuid",
+        "version": "integer default 1",
+        "created_at": "timestamptz",
+        "updated_at": "timestamptz"
+      }
+    },
+    "mindmap_nodes": {
+      "description": "Node kiến thức cụ thể, đồng bộ với AI chat và kết quả kiểm tra.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "mindmap_id": "uuid references mindmaps",
+        "parent_id": "uuid references mindmap_nodes",
+        "title": "text",
+        "description": "text",
+        "resources": "jsonb",
+        "mastery_level": "text", 
+        "status": "text", 
+        "last_mastered_at": "timestamptz",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "tests": {
+      "description": "Template đề kiểm tra (thường xuyên, giữa kỳ, cuối kỳ, THPTQG).",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "title": "text",
+        "grade_level": "text",
+        "type": "text check (type in ('frequent','midterm','final','thptqg'))",
+        "difficulty": "text",
+        "topics": "text[]",
+        "metadata": "jsonb",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "test_questions": {
+      "description": "Ngân hàng câu hỏi chuẩn hóa để lắp ráp đề và đánh dấu topic/độ khó.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "test_id": "uuid references tests",
+        "question_type": "text",
+        "body": "text",
+        "answer": "jsonb",
+        "topic": "text",
+        "difficulty": "text",
+        "standards": "text[]",
+        "resources": "jsonb"
+      }
+    },
+    "test_attempts": {
+      "description": "Bài làm của học sinh cùng phân tích AI để hiển thị ở lịch sử & dashboard.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "user_id": "uuid references auth.users",
+        "test_id": "uuid references tests",
+        "topic": "text",
+        "difficulty": "text",
+        "score": "numeric",
+        "section_breakdown": "jsonb",
+        "answers": "jsonb",
+        "weak_topics": "jsonb",
+        "ai_feedback": "jsonb",
+        "started_at": "timestamptz",
+        "completed_at": "timestamptz",
+        "created_at": "timestamptz default now()"
+      }
+    },
+    "adaptive_recommendations": {
+      "description": "Danh sách chủ đề/đề xuất luyện tập được sinh từ dữ liệu AI chat + lịch sử test.",
+      "columns": {
+        "id": "uuid PRIMARY KEY",
+        "user_id": "uuid references auth.users",
+        "source_attempt_id": "uuid references test_attempts",
+        "suggested_topics": "text[]",
+        "study_advice": "text[]",
+        "generated_by": "text",
+        "created_at": "timestamptz default now()"
+      }
+    }
+  },
+  "data_flows": [
+    "AI chat -> knowledge_snippets (tách kiến thức, nhúng vector)",
+    "AI chat -> mindmap_nodes (cập nhật mastery level)",
+    "Test attempts -> adaptive_recommendations -> mindmap/test generation",
+    "Mindmap node completion -> student_profiles.strengths/weaknesses"
+  ],
+  "rls_policies": "Mỗi bảng chứa user_id đều có chính sách 'user_id = auth.uid()' cho SELECT/INSERT/UPDATE/DELETE. Bảng tests/test_questions chỉ cho phép role service_role ghi.",
+  "functions": {
+    "fn_generate_adaptive_test": "Postgres function tổng hợp yếu điểm từ test_attempts + chat_sessions để dựng danh sách topic gửi tới API Gemini.",
+    "fn_log_geometry_prompt": "Trigger ghi lại prompt dùng cho Geogebra để theo dõi lỗi vẽ."
+  }
+}
