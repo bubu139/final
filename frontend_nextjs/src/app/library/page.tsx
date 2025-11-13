@@ -114,17 +114,24 @@ export default function LibraryPage() {
       }
 
       if (chunks.length) {
-        const payload = chunks.map((content, index) => ({
-          user_id: user.id,
-          document_id: insertedDoc.id,
-          chunk_index: index,
-          content,
-          source_path: path,
-          embedding_status: "pending",
-        }));
-        const { error: chunkError } = await client.from("document_chunks").insert(payload);
+        const payload = chunks.map((rawContent, index) => {
+          const content = rawContent.replace(/\u0000/g, ""); 
+          return {
+            user_id: user.id,
+            document_id: insertedDoc.id,
+            chunk_index: index,
+            content,
+            source_path: path,
+            embedding_status: "pending",
+          };
+        });
+        const { error: chunkError } = await client
+        .from("document_chunks")
+        .insert(payload);
+    
         if (chunkError) {
           console.error("Lỗi khi lưu chunk", chunkError);
+          alert("Chunk error:\n" + JSON.stringify(chunkError, null, 2));
           setStatusMessage("Đã tải file nhưng chưa thể tạo chunk cho RAG. Vui lòng thử lại trong dashboard Supabase.");
         } else {
           await client
