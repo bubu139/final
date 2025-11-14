@@ -1,4 +1,5 @@
 # src/main.py
+import re
 import uvicorn
 import json
 import os
@@ -339,6 +340,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+def extract_reply_only(raw_text: str) -> str:
+    """
+    Lấy phần nội dung trong key "reply": " ... " từ output của model,
+    kể cả khi toàn bộ không phải JSON hợp lệ.
+    Nếu không tìm thấy, trả lại nguyên chuỗi.
+    """
+    if not raw_text:
+        return ""
+
+    # Bỏ dấu xuống dòng dư thừa để regex dễ làm việc
+    text = raw_text.strip()
+
+    # Cố gắng tìm "reply": "...."
+    match = re.search(r'"reply"\s*:\s*"([^"]*)"', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    # Nếu model dùng 'reply': '...' (dùng nháy đơn) thì bắt thêm
+    match2 = re.search(r"'reply'\s*:\s*'([^']*)'", text, re.DOTALL)
+    if match2:
+        return match2.group(1).strip()
+
+    # Không tìm được thì trả nguyên
+    return text
+
 
 # ===== SCHEMAS =====
 
@@ -440,24 +466,32 @@ async def handle_chat(request: ChatInputSchema):
             "top_p": 0.95,
             "top_k": 40,
             "max_output_tokens": 8192,
-            "response_mime_type": "application/json"
+            "response_mime_type": "application/json",
         }
-        
+
         model = genai.GenerativeModel(
-            'gemini-2.5-flash',
+            "gemini-2.5-flash",
             generation_config=generation_config,
-            system_instruction=CHAT_SYSTEM_INSTRUCTION
+            system_instruction=CHAT_SYSTEM_INSTRUCTION,
         )
-        
+
+        # 1) DÙNG TOÀN BỘ HISTORY
         conversation_history = []
         for turn in request.history:
             if not turn.content:
                 continue
-            conversation_history.append({
-                "role": turn.role,
-                "parts": [{"text": turn.content}]
-            })
 
+            # Map role từ frontend -> role hợp lệ của Gemini
+            mapped_role = "user" if turn.role == "user" else "model"
+
+            conversation_history.append(
+                {
+                    "role": mapped_role,
+                    "parts": [{"text": turn.content}],
+                }
+            )
+
+        # 2) Thêm câu hỏi mới, có blueprint yêu cầu tham chiếu lịch sử
         user_prompt = f"""{CHAT_RESPONSE_BLUEPRINT}\n\nHọc sinh vừa hỏi: {request.message}"""
         user_parts = [{"text": user_prompt}]
 
@@ -466,39 +500,79 @@ async def handle_chat(request: ChatInputSchema):
                 user_parts.append({"media": {"url": media.url}})
 
         contents = conversation_history + [{"role": "user", "parts": user_parts}]
+
+        # (tuỳ chọn) log để tự kiểm tra
+        # print("DEBUG contents:", json.dumps(contents, ensure_ascii=False)[:500])
+
+                # Gọi Gemini với toàn bộ nội dung hội thoại + câu hỏi hiện tại
         response = model.generate_content(contents)
 
-        raw_text = response.text if hasattr(response, 'text') else None
+        # Lấy raw text từ model
+        raw_text = response.text if hasattr(response, "text") else None
         if not raw_text:
             raise ValueError("Model không trả về phản hồi")
 
-        try:
-            payload = json.loads(raw_text)
-        except json.JSONDecodeError:
-            payload = {"reply": raw_text}
-
-        mindmap_data = payload.get("mindmap_insights")
-        if not isinstance(mindmap_data, list):
-            mindmap_data = []
-
-        geogebra_block = payload.get("geogebra") or {}
+        # Mặc định: không mindmap, không vẽ geogebra
+        mindmap_data = []
         normalized_geogebra = {
-            "should_draw": bool(geogebra_block.get("should_draw")),
-            "reason": geogebra_block.get("reason") or "",
-            "prompt": geogebra_block.get("prompt") or request.message,
-            "commands": geogebra_block.get("commands") if isinstance(geogebra_block.get("commands"), list) else []
+            "should_draw": False,
+            "reason": "",
+            "prompt": request.message,
+            "commands": [],
         }
 
-        reply_text = payload.get("reply") or payload.get("message") or raw_text
+        # ===================== TRY PARSE JSON =====================
+        try:
+            # Cắt phần từ dấu { đầu tiên đến dấu } cuối cùng (tránh text thừa)
+            text = raw_text.strip()
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                json_candidate = text[start : end + 1]
+            else:
+                json_candidate = text
 
+            payload = json.loads(json_candidate)
+
+            # Nếu parse được JSON, ưu tiên lấy reply trong JSON
+            reply_text = (
+                payload.get("reply")
+                or payload.get("message")
+                or extract_reply_only(raw_text)
+            )
+
+            # mindmap_insights nếu là list thì dùng, không thì bỏ qua
+            md = payload.get("mindmap_insights")
+            if isinstance(md, list):
+                mindmap_data = md
+
+            # geogebra nếu có cấu trúc đúng thì dùng cho luồng GeoGebra
+            geogebra_block = payload.get("geogebra") or {}
+            normalized_geogebra = {
+                "should_draw": bool(geogebra_block.get("should_draw")),
+                "reason": geogebra_block.get("reason") or "",
+                "prompt": geogebra_block.get("prompt") or request.message,
+                "commands": geogebra_block.get("commands")
+                if isinstance(geogebra_block.get("commands"), list)
+                else [],
+            }
+
+        except Exception as e:
+            # JSON hỏng (giống ví dụ bạn đưa) -> chỉ lấy phần reply, bỏ mindmap & geogebra
+            print("JSON parse failed, fallback to reply-only:", e)
+            reply_text = extract_reply_only(raw_text)
+
+        # Trả response về frontend: chat chỉ dùng field "reply"
         return {
             "reply": reply_text,
             "mindmap_insights": mindmap_data,
-            "geogebra": normalized_geogebra
+            "geogebra": normalized_geogebra,
         }
+
     except Exception as e:
         print(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/generate-exercises")
 async def handle_generate_exercises(request: GenerateExercisesInput):
