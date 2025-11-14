@@ -4,6 +4,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
+import { TestHistoryService } from '@/services/test-history.service';
 // KHÔNG CẦN import useFirestore hay TestHistoryService nữa
 import type { Test, Question } from '@/types/test-schema';
 import type { TestAttempt, WeakTopic } from '@/types/test-history'; // <-- Import WeakTopic
@@ -45,6 +47,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: Props) {
   const router = useRouter();
   const { user } = useUser();
+  const { client: supabase } = useSupabase();
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -53,6 +56,7 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestResultState | null>(null);
   const [startTime] = useState<number>(Date.now());
+  const [isSavingHistory, setIsSavingHistory] = useState(false);
 
   const allQuestions: Question[] = [
     ...testData.parts.multipleChoice.questions,
@@ -64,6 +68,7 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
   const progress = ((currentQuestionIndex + 1) / allQuestions.length) * 100;
   const answeredCount = Object.keys(answers).length;
   const canSubmit = answeredCount === allQuestions.length;
+  const isBusy = isLoading || isSavingHistory;
 
   const getSafeUserAnswer = (question: Question, rawAnswer: any) => {
     if (question.type === 'true-false') {
@@ -216,14 +221,46 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
       const aiAnalysis: AiAnalysisResult = await response.json();
       console.log('✅ AI đã phân tích:', aiAnalysis);
 
-      // BƯỚC 4: Hiển thị kết quả
+      // BƯỚC 4: Lưu lịch sử làm bài & gợi ý AI (nếu người dùng đã đăng nhập)
+      let persistedAttempt = fullAttempt;
+      if (supabase && user) {
+        try {
+          setIsSavingHistory(true);
+          const historyService = new TestHistoryService(supabase);
+          const { id: _localId, submittedAt: _submittedAt, ...attemptPayload } = fullAttempt;
+          const attemptId = await historyService.saveTestAttempt(attemptPayload);
+          persistedAttempt = { ...fullAttempt, id: attemptId };
+
+          const summaryLines = [
+            aiAnalysis.analysis ? `Đánh giá: ${aiAnalysis.analysis}` : null,
+            aiAnalysis.strengths?.length ? `Điểm mạnh: ${aiAnalysis.strengths.join(', ')}` : null,
+            aiAnalysis.weaknesses?.length ? `Điểm yếu: ${aiAnalysis.weaknesses.join(', ')}` : null,
+            aiAnalysis.recommendations?.length ? `Lời khuyên: ${aiAnalysis.recommendations.join(' | ')}` : null,
+            aiAnalysis.suggestedTopics?.length ? `Chủ đề nên học: ${aiAnalysis.suggestedTopics.join(', ')}` : null,
+          ].filter(Boolean);
+
+          if (summaryLines.length > 0) {
+            await historyService.saveAIRecommendation({
+              userId: user.id,
+              content: summaryLines.join('\n'),
+              generatedAt: new Date(),
+            });
+          }
+        } catch (saveError) {
+          console.error('⚠️ Không thể lưu lịch sử làm bài:', saveError);
+        } finally {
+          setIsSavingHistory(false);
+        }
+      }
+
+      // BƯỚC 5: Hiển thị kết quả
       setTestResult({
-        attempt: fullAttempt,
+        attempt: persistedAttempt,
         weakTopics: localWeakTopics,
         aiAnalysis: aiAnalysis
       });
       setIsSubmitted(true);
-      
+
     } catch (err: any) {
       console.error('❌ Lỗi khi nộp bài:', err);
       setError(err.message || 'Có lỗi xảy ra khi nộp bài. Vui lòng thử lại.');
@@ -397,11 +434,11 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
             )}
             <Button
               onClick={handleSubmit}
-              disabled={!canSubmit || isLoading} // <-- Chỉ cần check 2 điều kiện này
+              disabled={!canSubmit || isBusy}
               size="lg"
               className="w-full bg-green-600 hover:bg-green-700"
             >
-              {isLoading ? (
+              {isBusy ? (
                 <>
                   <Loader className="w-4 h-4 mr-2 animate-spin" />
                   Đang xử lý...
@@ -414,12 +451,14 @@ export function TestRenderer({ testData, onRetry, testId, topic, difficulty }: P
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isBusy && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center rounded-lg z-50">
           <Card className="bg-white">
             <CardContent className="p-8 flex flex-col items-center gap-4">
               <Loader className="w-12 h-12 animate-spin text-primary" />
-              <p className="text-muted-foreground">AI đang phân tích bài làm...</p>
+              <p className="text-muted-foreground text-center">
+                AI đang phân tích và lưu lại lịch sử bài làm của bạn...
+              </p>
             </CardContent>
           </Card>
         </div>
