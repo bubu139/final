@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Cài các package hệ thống tối thiểu
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Thư mục làm việc
+WORKDIR /code
+
+# Copy backend vào image
+COPY backend_python/ ./backend_python
+
+# Vào thư mục backend
+WORKDIR /code/backend_python
+
+# Cài dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# HuggingFace Spaces mặc định dùng port 7860
+ENV PORT=7860
+
+# Expose port cho HF (không bắt buộc nhưng rõ ràng)
+EXPOSE 7860
+
+# Chạy FastAPI
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]
