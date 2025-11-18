@@ -8,4 +8,6 @@ google-generativeai
 python-docx
 PyPDF2
 python-multipart
+
 aiofiles
+supabase
