@@ -1,4 +1,5 @@
-// lib/nodeProgressApi.ts
+// Import API_URL từ file config
+import { API_URL } from '../config'; // Hoặc đường dẫn đúng tới file config.js của bạn
 
 export type NodeStatus = "not_started" | "learning" | "mastered";
 
@@ -21,7 +22,8 @@ export async function openNode(
   userId: string,
   nodeId: string
 ): Promise<NodeProgress> {
-  await fetch("http://localhost:8000/node-progress/update", {
+  // SỬA: Dùng API_URL thay vì localhost
+  await fetch(`${API_URL}/node-progress/update`, {
     method: "POST",
     headers: {
       "Accept": "application/json",
@@ -50,7 +52,8 @@ export async function updateNodeScore(
   nodeId: string,
   score: number
 ): Promise<NodeProgress> {
-  await fetch("http://localhost:8000/node-progress/update", {
+  // SỬA: Dùng API_URL thay vì localhost
+  await fetch(`${API_URL}/node-progress/update`, {
     method: "POST",
     headers: {
       "Accept": "application/json",
@@ -72,12 +75,13 @@ export async function updateNodeScore(
 }
 
 // ===============================
-// 3) GET PROGRESS  (ĐÃ FIX PARSE JSON)
+// 3) GET PROGRESS
 // ===============================
 export async function getNodeProgress(
   userId: string
 ): Promise<Record<string, NodeProgress>> {
-  const res = await fetch(`http://localhost:8000/node-progress/${userId}`, {
+  // SỬA: Dùng API_URL thay vì localhost
+  const res = await fetch(`${API_URL}/node-progress/${userId}`, {
     method: "GET",
     headers: {
       "Accept": "application/json",
@@ -85,10 +89,7 @@ export async function getNodeProgress(
   });
 
   const json = await res.json();
-
-  // Backend trả thẳng list → CHỈ CẦN DÙNG json
   const list = Array.isArray(json) ? json : json.data ?? [];
-
   const result: Record<string, NodeProgress> = {};
 
   for (const item of list) {
