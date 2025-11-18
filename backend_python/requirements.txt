@@ -11,3 +11,5 @@ python-multipart
 
 aiofiles
 supabase
+flask-cors
+
