@@ -6,4 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 // ... (hàm 'cn' của bạn)
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+// Ưu tiên biến môi trường, nếu không có thì dùng link Render cứng
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://final-h94w.onrender.com";
