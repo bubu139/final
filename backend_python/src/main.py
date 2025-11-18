@@ -17,7 +17,16 @@ from src.supabase_client import supabase
 # Import config
 from .ai_config import genai
 
+
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],         # hoặc thay * bằng domain Vercel của bạn
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Thêm router node progress
 app.include_router(node_progress_router)
@@ -1306,4 +1315,5 @@ if __name__ == "__main__":
     print("⚠️  NOTE: Place your files in these folders")
     print("="*60 + "\n")
     
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
