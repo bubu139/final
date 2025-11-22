@@ -420,9 +420,6 @@ class GenerateExercisesInput(BaseModel):
     difficulty: str = "medium"
     count: int = 3
 
-class GenerateTestInput(BaseModel):
-    topic: str
-    difficulty: str = "medium"
 
 class SummarizeTopicInput(BaseModel):
     topic: str
@@ -448,7 +445,12 @@ class GenerateAdaptiveTestInput(BaseModel):
     userId: str
     weakTopics: List[str]
     difficulty: str = "medium"
-
+    
+class GenerateTestInput(BaseModel):
+    topic: str
+    difficulty: str = "medium"
+    testType: str = "standard"  # Thêm trường này (node, standard, thptqg)
+    numQuestions: int = 5       # Thêm trường này
 # ===== HELPER FUNCTIONS =====
 
 def evaluate_node_status(score: float, has_opened: bool) -> str:
