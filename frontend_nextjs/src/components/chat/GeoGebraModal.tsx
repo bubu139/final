@@ -17,7 +17,7 @@ declare global {
 }
 
 const API_KEY = 'AIzaSyAt0EJWAJSp55AbEYaQpR86dqmX99byTjI';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
 const SYSTEM_PROMPT = `Bạn là trợ lý thông minh chuyên vẽ hình học với GeoGebra.
 
@@ -508,4 +508,5 @@ export function GeoGebraModal({ isOpen, onOpenChange, autoPrompt, autoCommands, 
       </DialogContent>
     </Dialog>
   );
+
 }
