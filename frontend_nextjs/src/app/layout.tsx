@@ -7,7 +7,7 @@ import MathJaxConfig from "@/components/MathJaxConfig";
 import { SupabaseClientProvider } from "@/supabase";
 
 export const metadata: Metadata = {
-  title: "MindView Canvas",
+  title: "Mathmentor",
   description: "An interactive mind map visualization tool.",
 };
 

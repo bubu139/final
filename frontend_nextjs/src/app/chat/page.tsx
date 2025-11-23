@@ -1,4 +1,3 @@
-// [CODE FILE: bubu139/riel/riel-f4de1f56e545348352c306da2d48610a40fae0d9/frontend_nextjs/src/app/chat/page.tsx]
 'use client';
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -7,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-// import remarkMath from 'remark-math'; // <-- BƯỚC 1: XÓA IMPORT NÀY
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -58,10 +56,8 @@ type GeogebraSuggestion = {
   consumed?: boolean;
 };
 
-// page.tsx (Thay thế dòng 59-79)
-
 const latexSymbols = [
-  { 
+  {
     label: "Toán tử",
     symbols: [
       { display: "＋", insert: " + " },
@@ -77,7 +73,7 @@ const latexSymbols = [
       { display: "±", insert: " \\pm " }
     ]
   },
-  { 
+  {
     label: "Ký hiệu",
     symbols: [
       { display: "α", insert: "$\\alpha$" },
@@ -103,10 +99,10 @@ const latexSymbols = [
       { display: "≈", insert: "$\\approx$" }
     ]
   },
-  { 
-    label: "Cấu trúc (Đã sửa)",
+  {
+    label: "Cấu trúc",
     symbols: [
-      { display: "√", insert: "$\\sqrt{}$", offset: -1 }, // offset để đặt con trỏ vào trong {}
+      { display: "√", insert: "$\\sqrt{}$", offset: -1 },
       { display: "√x", insert: "$\\sqrt{x}$" },
       { display: "x²", insert: "$x^2$" },
       { display: "aⁿ", insert: "$a^n$" },
@@ -118,8 +114,6 @@ const latexSymbols = [
   }
 ];
 
-
-// Khai báo MathJax trên window để TypeScript không báo lỗi
 declare global {
   interface Window {
     MathJax: any;
@@ -133,8 +127,8 @@ export default function ChatPage() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [mindmapUpdates, setMindmapUpdates] = useState<MindmapInsightPayload[]>([]);
   const [geogebraSuggestion, setGeogebraSuggestion] = useState<GeogebraSuggestion | null>(null);
-  
-  const [isModalOpen, setIsModalOpen] = useState(false); 
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -143,24 +137,11 @@ export default function ChatPage() {
   const inputContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setMessages([{ 
-      text: "Xin chào! Hãy đặt câu hỏi toán học để bắt đầu. Tôi hỗ trợ công thức LaTeX!\n\nVí dụ: Giải phương trình $x^2 - 5x + 6 = 0$", 
-      isUser: false 
+    setMessages([{
+      text: "Xin chào! Hãy đặt câu hỏi toán học để bắt đầu. Tôi hỗ trợ công thức LaTeX!\n\nVí dụ: Giải phương trình $x^2 - 5x + 6 = 0$",
+      isUser: false
     }]);
   }, []);
-
-  // --- SỬA LỖI 3: XÓA BỎ useEffect GỌI MathJax THỦ CÔNG ---
-  // Lý do: File `MathJaxConfig.tsx` đã xử lý việc này một cách
-  // tự động và hiệu quả hơn bằng MutationObserver.
-  // Giữ lại code này sẽ gây xung đột và render lỗi.
-  /*
-  useEffect(() => {
-    if (!window.MathJax) return;
-    // ... (code cũ đã bị xóa) ...
-  }, [input, mindmapUpdates, messages]);
-  */
-  // --- KẾT THÚC SỬA LỖI 3 ---
-
 
   const handleSend = async (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -285,40 +266,36 @@ export default function ChatPage() {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Auto-scroll to bottom using sentinel endRef
-useEffect(() => {
-  if (!scrollAreaRef.current) return;
-  const scrollContainer = scrollAreaRef.current;
-  const t = window.setTimeout(() => {
-    try {
-      scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
-    } catch {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
-  }, 50);
-  return () => clearTimeout(t);
-}, [messages]);
-
-
-  // Adjust padding bottom of scroll area based on input container height
   useEffect(() => {
-  const adjustPadding = () => {
-    if (inputContainerRef.current && scrollAreaRef.current) {
-      const height = inputContainerRef.current.clientHeight;
-      scrollAreaRef.current.style.paddingBottom = `${height}px`;
-    }
-  };
-  adjustPadding();
-  window.addEventListener('resize', adjustPadding);
-  const observer = new ResizeObserver(adjustPadding);
-  if (inputContainerRef.current) observer.observe(inputContainerRef.current);
-  return () => {
-    window.removeEventListener('resize', adjustPadding);
-    if (inputContainerRef.current) observer.unobserve(inputContainerRef.current);
-    observer.disconnect();
-  };
-}, []);
+    if (!scrollAreaRef.current) return;
+    const scrollContainer = scrollAreaRef.current;
+    const t = window.setTimeout(() => {
+      try {
+        scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+      } catch {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    }, 50);
+    return () => clearTimeout(t);
+  }, [messages]);
 
+  useEffect(() => {
+    const adjustPadding = () => {
+      if (inputContainerRef.current && scrollAreaRef.current) {
+        const height = inputContainerRef.current.clientHeight;
+        scrollAreaRef.current.style.paddingBottom = `${height}px`;
+      }
+    };
+    adjustPadding();
+    window.addEventListener('resize', adjustPadding);
+    const observer = new ResizeObserver(adjustPadding);
+    if (inputContainerRef.current) observer.observe(inputContainerRef.current);
+    return () => {
+      window.removeEventListener('resize', adjustPadding);
+      if (inputContainerRef.current) observer.unobserve(inputContainerRef.current);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -327,28 +304,22 @@ useEffect(() => {
     }
   }, [input]);
 
-// page.tsx (Thay thế hàm insertLatex ở dòng 343)
+  const insertLatex = (symbol: string, offset?: number) => {
+    if (textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      const text = textareaRef.current.value;
 
-const insertLatex = (symbol: string, offset?: number) => {
-  if (textareaRef.current) {
-    const start = textareaRef.current.selectionStart;
-    const end = textareaRef.current.selectionEnd;
-    const text = textareaRef.current.value;
+      const newValue = text.slice(0, start) + symbol + text.slice(end);
+      setInput(newValue);
 
-    const newValue = text.slice(0, start) + symbol + text.slice(end);
-    setInput(newValue);
-
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      // Tính toán vị trí con trỏ mới
-      // Nếu có offset (ví dụ: -1), nó sẽ đặt con trỏ trước ký tự cuối cùng
-      const newPos = start + symbol.length + (offset || 0);
-      textareaRef.current?.setSelectionRange(newPos, newPos);
-    }, 0); 
-  }
-};
-
-
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        const newPos = start + symbol.length + (offset || 0);
+        textareaRef.current?.setSelectionRange(newPos, newPos);
+      }, 0);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-3xl shadow-2xl overflow-hidden border border-blue-100 relative">
@@ -369,121 +340,157 @@ const insertLatex = (symbol: string, offset?: number) => {
         <Sparkles className="w-6 h-6 text-orange-200 animate-pulse" />
       </header>
 
-       <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-blue-50" ref={scrollAreaRef}>
+      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-blue-50" ref={scrollAreaRef}>
         <div className="p-6 flex flex-col gap-6">
-            {messages.map((message, index) => (
-              <div key={index} className={cn("flex items-start gap-3", message.isUser ? "justify-end" : "justify-start")}>
-                {!message.isUser && (
-                  <Avatar className="w-10 h-10 border-2 border-white shadow-md">
-                    <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-500">
-                      <Bot className="w-6 h-6 text-white" />
-                    </AvatarFallback>
-                  </Avatar>
-                )}
-<div
-  id={!message.isUser ? `assistant-message-${index}` : undefined}
-  className={cn(
-    "max-w-[75%] rounded-2xl p-4 shadow-md",
-    message.isUser ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white" : "bg-white border border-blue-100"
-  )}
->
-  <ReactMarkdown
-    className="prose dark:prose-invert max-w-none text-sm leading-relaxed"
-    components={{
-      p: ({ node, ...props }) => <p style={{ margin: 0 }} {...props} />,
-    }}
-  >
-    {message.text}
-  </ReactMarkdown>
-</div>
-
-
-                {message.isUser && (
-                  <Avatar className="w-10 h-10 border-2 border-white shadow-md">
-                    <AvatarFallback className='bg-gradient-to-br from-gray-600 to-gray-700'>
-                      <User className="w-6 h-6 text-white" />
-                    </AvatarFallback>
-                  </Avatar>
-                )}
-              </div>
-            ))}
-            {isLoading && (
-              <div className="flex items-start gap-3">
+          {messages.map((message, index) => (
+            <div key={index} className={cn("flex items-start gap-3", message.isUser ? "justify-end" : "justify-start")}>
+              {!message.isUser && (
                 <Avatar className="w-10 h-10 border-2 border-white shadow-md">
                   <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-500">
                     <Bot className="w-6 h-6 text-white" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3 shadow-md flex items-center gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  <span className="text-sm text-muted-foreground">AI đang phân tích toàn bộ cuộc trò chuyện...</span>
-                </div>
-              </div>
-            )}
-            {geogebraSuggestion && (
-              <Card className="border-blue-200 bg-white/90 shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Compass className="w-4 h-4 text-blue-600" /> GeoGebra đã sẵn sàng
-                  </CardTitle>
-                  <Badge variant="outline" className="text-xs">{geogebraSuggestion.commands.length} lệnh</Badge>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-muted-foreground">
-                  <p>{geogebraSuggestion.reason}</p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button type="button" onClick={() => setIsModalOpen(true)}>
-                      Mở GeoGebra
-                    </Button>
-                    <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => setGeogebraSuggestion(null)}>
-                      Ẩn gợi ý
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            {mindmapUpdates.length > 0 && (
-              <Card className="border-amber-200 bg-amber-50/70 shadow-md">
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Share2 className="w-4 h-4 text-amber-500" /> Mindmap vừa được cập nhật
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-{mindmapUpdates.map((node) => (
-  <div key={node.nodeId} className="p-3 rounded-xl bg-white/80 border border-amber-100">
-    <div className="flex items-center gap-2">
-      <span
-        className="font-semibold text-sm mathjax-node"
-dangerouslySetInnerHTML={{
-  __html: node.label
-}}
-      />
-      <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">{node.type.toUpperCase()}</Badge>
-    </div>
-  </div>
-))}
+              )}
 
+              <div
+                id={!message.isUser ? `assistant-message-${index}` : undefined}
+                className={cn(
+                  "p-4 rounded-2xl max-w-[85%] shadow-sm relative group",
+                  message.isUser
+                    ? "bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-tr-none"
+                    : "bg-white border border-gray-100 text-gray-800 rounded-tl-none"
+                )}
+              >
+                <div className={cn("prose prose-sm max-w-none break-words", message.isUser ? "prose-invert" : "")}>
+                  <ReactMarkdown
+                    components={{
+                      p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                      a: ({ node, ...props }) => <a className="text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
+                      code: ({ node, className, children, ...props }: any) => {
+                        const match = /language-(\w+)/.exec(className || '');
+                        return !match ? (
+                          <code className="bg-black/10 px-1 py-0.5 rounded font-mono text-sm" {...props}>
+                            {children}
+                          </code>
+                        ) : (
+                          <pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto my-2">
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          </pre>
+                        );
+                      },
+                      table: ({ node, ...props }) => <div className="overflow-x-auto my-2"><table className="min-w-full border-collapse border border-gray-300" {...props} /></div>,
+                      th: ({ node, ...props }) => <th className="border border-gray-300 px-3 py-2 bg-gray-100 font-semibold text-gray-700" {...props} />,
+                      td: ({ node, ...props }) => <td className="border border-gray-300 px-3 py-2" {...props} />,
+                      blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-blue-400 pl-4 italic my-2 text-gray-600" {...props} />,
+                      ul: ({ node, ...props }) => <ul className="list-disc list-inside my-2" {...props} />,
+                      ol: ({ node, ...props }) => <ol className="list-decimal list-inside my-2" {...props} />,
+                    }}
+                  >
+                    {message.text}
+                  </ReactMarkdown>
+                </div>
+
+                {message.files && message.files.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {message.files.map((file, i) => (
+                      <div key={i} className="bg-white/10 p-2 rounded-lg flex items-center gap-2 text-xs border border-white/20">
+                        <FileIcon className="w-3 h-3" />
+                        <span className="truncate max-w-[100px]">{file.name}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild variant="outline">
-                      <Link href="/mindmap">Xem mindmap</Link>
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={() => setMindmapUpdates([])}>
-                      Đã ghi nhớ
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            <div ref={endRef} />
-           </div>
+                )}
+              </div>
+
+              {message.isUser && (
+                <Avatar className="w-10 h-10 border-2 border-white shadow-md">
+                  <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500">
+                    <User className="w-6 h-6 text-white" />
+                  </AvatarFallback>
+                </Avatar>
+              )}
+            </div>
+          ))}
+
+          {isLoading && (
+            <div className="flex items-start gap-3">
+              <Avatar className="w-10 h-10 border-2 border-white shadow-md">
+                <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-500">
+                  <Bot className="w-6 h-6 text-white" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3 shadow-md flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <span className="text-sm text-muted-foreground">AI đang phân tích toàn bộ cuộc trò chuyện...</span>
+              </div>
+            </div>
+          )}
+
+          {geogebraSuggestion && (
+            <Card className="border-blue-200 bg-white/90 shadow-md">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-blue-600" /> GeoGebra đã sẵn sàng
+                </CardTitle>
+                <Badge variant="outline" className="text-xs">{geogebraSuggestion.commands.length} lệnh</Badge>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>{geogebraSuggestion.reason}</p>
+                <div className="flex flex-wrap gap-3">
+                  <Button type="button" onClick={() => setIsModalOpen(true)}>
+                    Mở GeoGebra
+                  </Button>
+                  <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => setGeogebraSuggestion(null)}>
+                    Ẩn gợi ý
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {mindmapUpdates.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/70 shadow-md">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Share2 className="w-4 h-4 text-amber-500" /> Mindmap vừa được cập nhật
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {mindmapUpdates.map((node) => (
+                    <div key={node.nodeId} className="p-3 rounded-xl bg-white/80 border border-amber-100">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-semibold text-sm mathjax-node"
+                          dangerouslySetInnerHTML={{
+                            __html: node.label
+                          }}
+                        />
+                        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">{node.type.toUpperCase()}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button asChild variant="outline">
+                    <Link href="/mindmap">Xem mindmap</Link>
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setMindmapUpdates([])}>
+                    Đã ghi nhớ
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          <div ref={endRef} />
+        </div>
       </div>
 
       <div ref={inputContainerRef} className="fixed bottom-0 left-0 right-0 p-4 sm:px-6 sm:py-5 bg-white border-t border-blue-100 z-10">
-
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {attachedFiles.map((file, index) => (
@@ -498,16 +505,16 @@ dangerouslySetInnerHTML={{
           </div>
         )}
         <form onSubmit={handleSend} className="flex gap-3 items-end">
-          <input 
-            type="file" 
-            multiple 
-            accept="image/*" 
-            ref={fileInputRef} 
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            ref={fileInputRef}
             onChange={handleFileChange}
-            className="hidden" 
+            className="hidden"
           />
-          <Button 
-            type="button" 
+          <Button
+            type="button"
             variant="default"
             className="flex-shrink-0 w-12 h-12 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-xl"
             onClick={() => fileInputRef.current?.click()}
@@ -517,8 +524,8 @@ dangerouslySetInnerHTML={{
           </Button>
           <Popover>
             <PopoverTrigger asChild>
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 variant="default"
                 className="flex-shrink-0 w-12 h-12 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-xl"
                 disabled={isLoading}
@@ -531,22 +538,19 @@ dangerouslySetInnerHTML={{
                 {latexSymbols.map((group) => (
                   <div key={group.label}>
                     <h4 className="font-medium text-sm text-muted-foreground mb-2">{group.label}</h4>
-
-
-<div className="grid grid-cols-5 gap-1">
-  {group.symbols.map((symbol) => (
-    <Button
-      key={symbol.display} // Dùng display làm key
-      variant="ghost"
-      size="sm"
-      className="h-auto text-xl"
-      // Chèn 'symbol.insert' thay vì 'symbol'
-      onClick={() => insertLatex(symbol.insert, (symbol as any).offset)} 
-    >
-      {symbol.display} {/* Hiển thị 'symbol.display' */}
-    </Button>
-  ))}
-</div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {group.symbols.map((symbol) => (
+                        <Button
+                          key={symbol.display}
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto text-xl"
+                          onClick={() => insertLatex(symbol.insert, (symbol as any).offset)}
+                        >
+                          {symbol.display}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -570,8 +574,8 @@ dangerouslySetInnerHTML={{
               disabled={isLoading}
             />
           </div>
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95"
             disabled={isLoading || (!input.trim() && attachedFiles.length === 0)}
           >
@@ -594,7 +598,6 @@ dangerouslySetInnerHTML={{
         autoCommands={!geogebraSuggestion?.consumed ? geogebraSuggestion?.commands : undefined}
         onConsumeAutoCommands={() => setGeogebraSuggestion(prev => prev ? { ...prev, consumed: true } : prev)}
       />
-
     </div>
   );
 }

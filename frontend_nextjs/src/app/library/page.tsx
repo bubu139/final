@@ -69,7 +69,7 @@ export default function LibraryPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadVisibility, setUploadVisibility] = useState<"private" | "public">("private");
-  
+
   // 3. THÊM STATE CHO MỤC ĐÍCH UPLOAD
   const [uploadPurpose, setUploadPurpose] = useState<'chat' | 'test'>('chat');
 
@@ -129,94 +129,7 @@ export default function LibraryPage() {
     let errorCount = 0;
     const errorMessages: string[] = [];
 
-    for (const file of files) {
-      try {
-        const sanitizedName = sanitizeFileName(file.name);
-        setStatusMessage(`(File ${successCount + errorCount + 1}/${files.length}) Đang tải lên: ${file.name}`);
-        
-        const path = `${user.id}/${Date.now()}-${sanitizedName}`;
-        const { error: uploadError } = await client.storage
-          .from(STORAGE_BUCKET)
-          .upload(path, file, {
-            upsert: true,
-            contentType: file.type || "application/octet-stream",
-          });
 
-        if (uploadError) throw uploadError;
-
-        setStatusMessage(`(File ${successCount + errorCount + 1}/${files.length}) Đang chia nhỏ: ${file.name}`);
-        let rawText = "";
-        try {
-          rawText = await file.text();
-        } catch (err) {
-          console.warn("Không thể đọc nội dung file, sẽ chỉ lưu metadata", err);
-        }
-        const chunks = chunkText(rawText);
-
-        // INSERT metadata
-        const { data: insertedDoc, error: docError } = await client
-          .from(metadataTable) // 👈 Dùng bảng động
-          .insert({
-            user_id: user.id,
-            file_name: file.name,
-            mime_type: file.type,
-            source_path: path,
-            rag_status: chunks.length ? "indexing" : "uploaded",
-            visibility: uploadVisibility,
-          })
-          .select()
-          .single();
-
-        if (docError || !insertedDoc) {
-          throw docError ?? new Error("Không thể tạo bản ghi tài liệu");
-        }
-
-        if (chunks.length) {
-          const payload = chunks.map((rawContent, index) => {
-            let content = rawContent.replace(/\u0000/g, "");
-            content = content.replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '');
-            return {
-              user_id: user.id,
-              [foreignKeyColumn]: insertedDoc.id, // 👈 Dùng khóa ngoại động
-              chunk_index: index,
-              content,
-              source_path: path,
-              embedding_status: "pending",
-              visibility: uploadVisibility,
-            };
-          });
-
-          const { error: chunkError } = await client
-            .from(chunkTable) // 👈 Dùng bảng chunk động
-            .insert(payload);
-
-          if (chunkError) {
-            console.error(`Lỗi khi lưu chunk cho file ${file.name}`, chunkError);
-            alert(`Chunk error (file: ${file.name}):\n` + JSON.stringify(chunkError, null, 2));
-          } else {
-            await client
-              .from(metadataTable) // 👈 Dùng bảng động
-              .update({ rag_status: "ready", chunk_count: payload.length })
-              .eq("id", insertedDoc.id);
-          }
-        }
-        successCount++;
-      } catch (error: any) {
-        console.error(`Lỗi khi xử lý file ${file.name}:`, error);
-        errorCount++;
-        errorMessages.push(`${file.name}: ${error.message}`);
-      }
-    }
-
-    setUploading(false);
-    if (errorCount > 0) {
-      setErrorMessage(`Tải lên ${successCount} tệp thành công, ${errorCount} tệp bị lỗi. Chi tiết: ${errorMessages.join(", ")}`);
-      setStatusMessage(null);
-    } else {
-      setStatusMessage(`Hoàn tất! Đã tải lên thành công ${successCount} tệp.`);
-      setErrorMessage(null);
-    }
-    
     // Tải lại cả hai danh sách
     void fetchChatDocuments();
     void fetchTestMaterials();
@@ -296,18 +209,18 @@ export default function LibraryPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          
+
           {/* 6. THÊM BỘ CHỌN MỤC ĐÍCH */}
           <div className="space-y-3">
             <Label className="font-medium">Mục đích tải lên</Label>
-            <RadioGroup 
-              value={uploadPurpose} 
+            <RadioGroup
+              value={uploadPurpose}
               onValueChange={(val) => setUploadPurpose(val as 'chat' | 'test')}
               className="flex gap-4"
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="chat" id="r-chat" />
-                <Label htmlFor="r-chat" className="cursor-pointer flex items-center gap-2"><Bot className="w-4 h-4"/> Cho AI Chat</Label>
+                <Label htmlFor="r-chat" className="cursor-pointer flex items-center gap-2"><Bot className="w-4 h-4" /> Cho AI Chat</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="test" id="r-test" />

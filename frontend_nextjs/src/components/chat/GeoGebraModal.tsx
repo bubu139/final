@@ -508,5 +508,4 @@ export function GeoGebraModal({ isOpen, onOpenChange, autoPrompt, autoCommands, 
       </DialogContent>
     </Dialog>
   );
-
 }

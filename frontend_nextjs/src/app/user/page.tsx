@@ -177,18 +177,27 @@ export default function UserPage() {
   );
 
   const strengthTopics = useMemo(
-    () =>
-      topicEntries
+    () => {
+      const strong = topicEntries
         .filter((entry) => entry.accuracy >= 80)
         .sort((a, b) => b.accuracy - a.accuracy)
-        .slice(0, 4),
+        .slice(0, 4);
+
+      if (strong.length > 0) return strong;
+
+      // Fallback: Top 3 topics with accuracy >= 50
+      return topicEntries
+        .filter((entry) => entry.accuracy >= 50)
+        .sort((a, b) => b.accuracy - a.accuracy)
+        .slice(0, 3);
+    },
     [topicEntries],
   );
 
   const practicingTopics = useMemo(
     () =>
       topicEntries
-        .filter((entry) => entry.accuracy >= 60 && entry.accuracy < 80)
+        .filter((entry) => entry.accuracy >= 50 && entry.accuracy < 80)
         .sort((a, b) => a.accuracy - b.accuracy),
     [topicEntries],
   );
@@ -196,7 +205,7 @@ export default function UserPage() {
   const fallbackWeakTopics = useMemo(
     () =>
       topicEntries
-        .filter((entry) => entry.accuracy < 70)
+        .filter((entry) => entry.accuracy < 50)
         .map((entry) => ({
           topic: entry.topic,
           accuracy: entry.accuracy,
@@ -216,12 +225,12 @@ export default function UserPage() {
       attempts.length === 0
         ? []
         : [...attempts]
-            .reverse()
-            .slice(0, 6)
-            .map((attempt) => ({
-              name: formatShortDate(attempt.completedAt),
-              score: Number(attempt.score.toFixed(1)),
-            })),
+          .reverse()
+          .slice(0, 6)
+          .map((attempt) => ({
+            name: formatShortDate(attempt.completedAt),
+            score: Number(attempt.score.toFixed(1)),
+          })),
     [attempts],
   );
 

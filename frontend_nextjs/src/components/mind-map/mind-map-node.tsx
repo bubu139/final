@@ -17,6 +17,7 @@ export type MindMapNodeProps = {
 
   color?: string;
   isSelected?: boolean;
+  score?: number | null; // Add score prop
 };
 
 export function MindMapNode({
@@ -27,6 +28,7 @@ export function MindMapNode({
   onClick,
   isSelected = false,
   color = "#2196F3",
+  score,
 }: MindMapNodeProps) {
 
   if (!position) return null;
@@ -72,10 +74,15 @@ export function MindMapNode({
       >
         <CardContent className="p-3 flex items-center gap-3">
           <div
-            className="p-2 rounded-lg"
+            className="p-2 rounded-lg relative"
             style={{ backgroundColor: nodeColor + "22" }}
           >
             <Share2 className="w-5 h-5" style={{ color: nodeColor }} />
+            {score !== undefined && score !== null && (
+              <div className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                {score.toFixed(0)}
+              </div>
+            )}
           </div>
 
           <div className="font-semibold text-base text-left" style={{ color: nodeColor }}>

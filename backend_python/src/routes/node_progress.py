@@ -13,13 +13,19 @@ router = APIRouter(prefix="/node-progress", tags=["node-progress"])
 @router.post("/update")
 def update_node_progress(data: NodeProgress):
     try:
+        # Calculate status
+        status = "learning"
+        if data.score is not None and data.score >= 80:
+            status = "mastered"
+
         # Chuẩn bị dữ liệu
         payload = {
             "user_id": data.user_id,
             "node_id": data.node_id,
             "opened": data.opened,
             "score": data.score,
-            "last_updated": datetime.utcnow().isoformat()
+            "status": status,
+            "updated_at": datetime.utcnow().isoformat()
         }
 
         # Sử dụng upsert: Nếu trùng (user_id, node_id) thì update, chưa có thì insert

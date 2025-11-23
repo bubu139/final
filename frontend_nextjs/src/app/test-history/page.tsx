@@ -9,11 +9,11 @@ import type { TestAttempt, TestAnalysis } from '@/types/test-history';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Calendar, 
-  Clock, 
-  TrendingUp, 
-  Award, 
+import {
+  Calendar,
+  Clock,
+  TrendingUp,
+  Award,
   Target,
   BarChart3,
   ArrowRight,
@@ -172,14 +172,12 @@ export default function TestHistoryPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-3xl font-bold ${
-                    analysis.improvementRate >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <span className={`text-3xl font-bold ${analysis.improvementRate >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
                     {analysis.improvementRate >= 0 ? '+' : ''}{analysis.improvementRate.toFixed(1)}%
                   </span>
-                  <TrendingUp className={`w-5 h-5 ${
-                    analysis.improvementRate >= 0 ? 'text-green-500' : 'text-red-500'
-                  }`} />
+                  <TrendingUp className={`w-5 h-5 ${analysis.improvementRate >= 0 ? 'text-green-500' : 'text-red-500'
+                    }`} />
                 </div>
               </CardContent>
             </Card>
@@ -218,16 +216,18 @@ export default function TestHistoryPage() {
                   <div key={idx} className="p-4 bg-white rounded-lg space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{topic.topic}</span>
-                      <Badge variant={topic.accuracy >= 50 ? 'secondary' : 'destructive'}>
+                      <Badge className={`${topic.accuracy >= 80 ? 'bg-green-100 text-green-700 hover:bg-green-200' :
+                          topic.accuracy >= 50 ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' :
+                            'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}>
                         {topic.accuracy.toFixed(0)}%
                       </Badge>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full ${
-                          topic.accuracy >= 70 ? 'bg-green-500' : 
-                          topic.accuracy >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
+                      <div
+                        className={`h-2 rounded-full ${topic.accuracy >= 80 ? 'bg-green-500' :
+                            topic.accuracy >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
                         style={{ width: `${topic.accuracy}%` }}
                       />
                     </div>
@@ -237,9 +237,9 @@ export default function TestHistoryPage() {
                   </div>
                 ))}
               </div>
-              
-              <Button 
-                className="w-full mt-4" 
+
+              <Button
+                className="w-full mt-4"
                 onClick={() => router.push('/tests/adaptive')}
               >
                 Làm đề thích ứng để cải thiện
@@ -252,7 +252,7 @@ export default function TestHistoryPage() {
         {/* Test History List */}
         <div className="space-y-4">
           <h2 className="text-2xl font-semibold">Lịch sử các bài làm</h2>
-          
+
           {attempts.length === 0 ? (
             <Card>
               <CardContent className="p-12 text-center">
@@ -291,7 +291,7 @@ export default function TestHistoryPage() {
                               </span>
                             </div>
                           </div>
-                          
+
                           {/* Score Badge */}
                           <Badge className={`text-lg px-4 py-2 ${getScoreColor(attempt.score)}`}>
                             {attempt.score.toFixed(1)}

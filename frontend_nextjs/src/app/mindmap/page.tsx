@@ -13,8 +13,11 @@ import {
   NodeProgress,
 } from "@/lib/nodeProgressApi";
 
+import { useUser } from "@/supabase/auth/use-user";
+
 export default function MindmapPage() {
-  const userId = "test-user";
+  const { user } = useUser();
+  const userId = user?.id || "";
 
   const [selectedNode, setSelectedNode] = useState<MindMapNode | null>(null);
 
@@ -26,13 +29,20 @@ export default function MindmapPage() {
   // LOAD PROGRESS TỪ SUPABASE
   // =================================================
   useEffect(() => {
+    if (!userId) return;
+
     const load = async () => {
-      const data = await getNodeProgress(userId);
-      setProgress(data || {});
-      setLoading(false);
+      try {
+        const data = await getNodeProgress(userId);
+        setProgress(data || {});
+      } catch (error) {
+        console.error("Failed to load node progress:", error);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, []);
+  }, [userId]);
 
   if (loading) return <p>Đang tải...</p>;
 

@@ -15,9 +15,10 @@ from src.models import NodeProgress
 from src.supabase_client import supabase
 
 # Import config
-from .ai_config import genai
+from src.ai_config import genai
 from src.ai_flows.chat_flow import chat as chat_flow
 from src.ai_schemas.chat_schema import ChatInputSchema
+from src.services import rag_service
 
 
 app = FastAPI()
@@ -413,11 +414,18 @@ class GeogebraInstruction(BaseModel):
 
 
 class ChatInputSchema(BaseModel):
+    userId: Optional[str] = None
     message: str
     history: List[ConversationTurn] = Field(default_factory=list)
     media: Optional[List[MediaPart]] = None
 
+class ProcessDocumentInput(BaseModel):
+    userId: str
+    documentId: str
+    purpose: str = "chat"
+
 class GenerateExercisesInput(BaseModel):
+    userId: Optional[str] = None
     topic: str
     difficulty: str = "medium"
     count: int = 3
@@ -449,6 +457,7 @@ class GenerateAdaptiveTestInput(BaseModel):
     difficulty: str = "medium"
     
 class GenerateTestInput(BaseModel):
+    userId: Optional[str] = None
     topic: str
     difficulty: str = "medium"
     testType: str = "standard"  # Thêm trường này (node, standard, thptqg)
@@ -524,6 +533,7 @@ async def root():
             "/api/chat",
             "/api/generate-exercises", 
             "/api/generate-test",
+            "/api/process-document",
             "/api/summarize-topic",
             "/api/geogebra",
             "/api/analyze-test-result",
@@ -534,6 +544,11 @@ async def root():
             "tests": str(TESTS_FOLDER)
         }
     }
+
+# ===== OPTIMIZATION: CACHED MODELS =====
+# We can initialize models globally if config is static, but here config varies slightly.
+# However, we can keep the client initialization lightweight.
+# The `genai.configure` is already done globally.
 
 # --- SỬA LỖI 1: TỐI ƯU HÓA TỐC ĐỘ CHAT ---
 @app.post("/api/chat")
@@ -548,13 +563,8 @@ async def handle_chat(request: ChatInputSchema):
             "response_mime_type": "application/json",
         }
 
-        model = genai.GenerativeModel(
-            "gemini-2.5-flash",
-            generation_config=generation_config,
-            system_instruction=CHAT_SYSTEM_INSTRUCTION,
-        )
-
         # 1) Xây dựng lại lịch sử cho Gemini ChatSession
+        gemini_history = []
         gemini_history = []
         for turn in request.history:
             if not turn.content:
@@ -569,10 +579,28 @@ async def handle_chat(request: ChatInputSchema):
 
         # 2) Khởi tạo ChatSession với lịch sử đã có
         #    Điều này cho phép model duy trì ngữ cảnh mà không cần gửi lại toàn bộ
+        #    OPTIMIZATION: Initialize model here or use cached one
+        model = genai.GenerativeModel(
+            "gemini-2.5-flash",
+            generation_config=generation_config,
+            system_instruction=CHAT_SYSTEM_INSTRUCTION,
+        )
         chat = model.start_chat(history=gemini_history)
 
         # 3) Chuẩn bị nội dung tin nhắn MỚI
-        user_prompt = f"""{CHAT_RESPONSE_BLUEPRINT}\n\nHọc sinh vừa hỏi: {request.message}"""
+        # RAG INTEGRATION
+        context_text = ""
+        if request.userId:
+            print(f"🔍 Searching documents for user {request.userId}...")
+            docs = await rag_service.search_similar_documents(request.message, request.userId, purpose="chat")
+            if docs:
+                context_text = "\n\n=== THÔNG TIN THAM KHẢO TỪ TÀI LIỆU CỦA BẠN ===\n"
+                for d in docs:
+                    context_text += f"- [{d['file_name']}]: {d['content']}\n"
+                context_text += "==============================================\n"
+                print(f"✅ Found {len(docs)} relevant chunks")
+
+        user_prompt = f"""{CHAT_RESPONSE_BLUEPRINT}\n\n{context_text}\nHọc sinh vừa hỏi: {request.message}"""
         user_parts = [{"text": user_prompt}]
 
         if request.media:
@@ -653,12 +681,24 @@ async def handle_generate_exercises(request: GenerateExercisesInput):
     """Generate math exercises based on topic"""
     try:
         print(f"📚 Generating exercises for topic: {request.topic}")
+        
+        # RAG Integration
+        context_text = ""
+        if request.userId:
+             docs = await rag_service.search_similar_documents(request.topic, request.userId, purpose="test") # Use test materials
+             if docs:
+                context_text = "\n\n=== TÀI LIỆU THAM KHẢO ===\n"
+                for d in docs:
+                    context_text += f"- {d['content']}\n"
+        
+        # Fallback to local files if no RAG results (optional, or keep both)
         reference_text = load_reference_materials(str(EXERCISES_FOLDER), max_files=3)
         
         generation_config = {
             "temperature": 0.7,
         }
         
+        # OPTIMIZATION: Re-use model if possible, but for now just keep it local as it's stateless
         model = genai.GenerativeModel(
             'gemini-2.5-flash',
             generation_config=generation_config,
@@ -666,6 +706,13 @@ async def handle_generate_exercises(request: GenerateExercisesInput):
         )
         
         prompt = f"""Tạo {request.count} bài tập toán học về chủ đề: "{request.topic}"
+Độ khó: {request.difficulty}
+
+Tài liệu tham khảo:
+{context_text}
+{reference_text}
+
+YÊU CẦU:
 Độ khó: {request.difficulty}
 
 YÊU CẦU:
@@ -710,6 +757,22 @@ YÊU CẦU:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
 
+@app.post("/api/process-document")
+async def process_document(request: ProcessDocumentInput):
+    """Trigger document processing (RAG)"""
+    try:
+        success = await rag_service.process_document(
+            user_id=request.userId,
+            document_id=request.documentId,
+            purpose=request.purpose
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="Processing failed")
+        return {"status": "ok", "message": "Document processed successfully"}
+    except Exception as e:
+        print(f"Process document error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==============================
 #  API TẠO TEST DỰA TRÊN NODE
 # ==============================
@@ -729,6 +792,7 @@ import google.generativeai as genai
 
 
 class NodeTestRequest(BaseModel):
+    userId: Optional[str] = None
     topic: str
 
 
@@ -750,8 +814,20 @@ async def generate_node_test(req: NodeTestRequest):
         # ========================
         #      PROMPT CHUẨN (SỬA LỖI 2A: BẮT BUỘC DÙNG LATEX)
         # ========================
+        # RAG Integration
+        context_text = ""
+        if req.userId:
+            docs = await rag_service.search_similar_documents(topic, req.userId, purpose="test")
+            if docs:
+                context_text = "\n\n=== TÀI LIỆU THAM KHẢO ===\n"
+                for d in docs:
+                    context_text += f"- {d['content']}\n"
+
         prompt = f"""
 Tạo đề kiểm tra toán lớp 12 dựa 100% trên chủ đề: "{topic}"
+
+TÀI LIỆU THAM KHẢO:
+{context_text}
 
 YÊU CẦU QUAN TRỌNG VỀ NỘI DUNG:
 - Sử dụng LaTeX cho công thức: $x^2$ hoặc $x^2 + 2x + 1 = 0$
@@ -770,9 +846,14 @@ VÍ DỤ:
 - ĐÚNG: "$(1; +\\\\infty)$"
 
 YÊU CẦU SỐ LƯỢNG CÂU HỎI:
-- 15 câu multiple-choice
-- 4 câu true-false (mỗi câu có 4 mệnh đề)
-- 2 câu short-answer
+- 15 câu multiple-choice (Trắc nghiệm 4 lựa chọn)
+- 4 câu true-false (Trắc nghiệm đúng sai, mỗi câu 4 ý)
+- 2 câu short-answer (Trắc nghiệm trả lời ngắn)
+
+CẤU TRÚC ĐỀ THI CHUẨN THPT 2025:
+1. Phần 1: Trắc nghiệm nhiều lựa chọn (4 phương án, chọn 1 đúng).
+2. Phần 2: Trắc nghiệm đúng sai (Mỗi câu hỏi có 4 ý a,b,c,d. Học sinh xét tính đúng sai của từng ý).
+3. Phần 3: Trắc nghiệm trả lời ngắn (Học sinh điền đáp án số).
 
 CẤU TRÚC JSON BẮT BUỘC (TUYỆT ĐỐI PHẢI ĐÚNG):
 {{
@@ -881,17 +962,31 @@ async def handle_generate_test(request: GenerateTestInput):
         )
         
         # --- PROMPT NÀY ĐÃ TỐT (GIỮ NGUYÊN) ---
+        # RAG Integration
+        context_text = ""
+        if request.userId:
+             docs = await rag_service.search_similar_documents(request.topic, request.userId, purpose="test")
+             if docs:
+                context_text = "\n\n=== TÀI LIỆU THAM KHẢO TỪ RAG ===\n"
+                for d in docs:
+                    context_text += f"- {d['content']}\n"
+
         prompt = f"""Tạo đề kiểm tra TOÁN LỚP 12 về chủ đề: "{request.topic}"
 Độ khó: {request.difficulty}
 
 TÀI LIỆU THAM KHẢO:
+{context_text}
 {reference_text if reference_text else "Không có tài liệu. Tạo đề theo chuẩn THPT QG."}
 
-QUY TẮC QUAN TRỌNG:
+QUY TẮC QUAN TRỌNG (CHUẨN FORM THPT 2025):
 1. Mỗi câu hỏi PHẢI có đầy đủ dữ liệu (phương trình, hàm số, đồ thị...)
 2. Sử dụng LaTeX cho công thức: $x^2$ hoặc $x^2 + 2x + 1 = 0$
 3. Câu hỏi phải CỤ THỂ, KHÔNG mơ hồ
 4. Đáp án phải CHÍNH XÁC
+5. Cấu trúc đề:
+   - Phần 1: Trắc nghiệm 4 lựa chọn (A,B,C,D)
+   - Phần 2: Trắc nghiệm Đúng/Sai (4 ý a,b,c,d)
+   - Phần 3: Trả lời ngắn (Điền số)
 
 VÍ DỤ MẪU:
 
@@ -1321,4 +1416,3 @@ if __name__ == "__main__":
     
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

@@ -5,4 +5,4 @@ class NodeProgress(BaseModel):
     user_id: str
     node_id: str
     opened: bool
-    score: int | None = None
+    score: float | None = None
