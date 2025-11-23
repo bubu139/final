@@ -1,12 +1,13 @@
 # src/ai_flows/chat_flow.py
-import genkit.ai as ai
-from genkit import flow
-from ..ai_schemas.chat_schema import ChatInputSchema, ChatOutputSchema
+import asyncio
 from typing import AsyncGenerator
+from ..ai_schemas.chat_schema import ChatInputSchema, ChatOutputSchema
+from ..ai_config import genai  # Sử dụng cấu hình từ ai_config.py
 
-MODEL = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-flash"
 
-# Prompt kỹ thuật System Instruction tuân thủ quy trình Flow Thinking & Critical Thinking
+# --- SYSTEM INSTRUCTION ---
+# Đưa instruction vào đây để Flow tự quản lý
 SYSTEM_INSTRUCTION = """
 Bạn là một AI gia sư toán học THPT lớp 12 Việt Nam tâm huyết và chuyên nghiệp.
 Triết lý: "Không giải bài thay học sinh, mà trang bị tư duy để học sinh TỰ TIN giải quyết vấn đề."
@@ -44,61 +45,73 @@ QUY TRÌNH HƯỚNG DẪN (Thực hiện tuần tự):
 5. **TỔNG KẾT:**
    - Khi ra đáp án đúng: Khen ngợi và chốt lại phương pháp tư duy đã dùng.
 
-ĐỊNH DẠNG ĐẦU RA (BẮT BUỘC JSON):
-Bạn phải trả về phản hồi dưới dạng JSON khớp với `ChatOutputSchema`:
+ĐỊNH DẠNG ĐẦU RA (JSON BẮT BUỘC):
+Bạn phải trả về JSON khớp với schema sau:
 {
-  "reply": "Nội dung lời thoại trò chuyện với học sinh (sử dụng Markdown)",
+  "reply": "Nội dung lời thoại thân thiện (Markdown). Chứa lời giải thích, câu hỏi gợi mở...",
   "mindmap_insights": [
     {
-      "node_id": "unique_id_kien_thuc",
+      "node_id": "slug-ten-kien-thuc",
       "label": "Tên kiến thức bị hổng",
       "type": "concept",
-      "weakness_summary": "Lý do học sinh yếu phần này",
-      "action_steps": ["Xem lại bài..."]
+      "weakness_summary": "Học sinh quên công thức...",
+      "action_steps": ["Ôn tập lại SGK trang..."]
     }
   ],
   "geogebra": {
     "should_draw": true,
-    "reason": "Vẽ hình chóp S.ABCD",
-    "commands": ["A=(0,0,0)", "B=(2,0,0)", ...]
+    "reason": "Vẽ đồ thị hàm số để xét tính đơn điệu",
+    "commands": ["f(x) = x^3 - 3x", "A=(1, -2)"]
   }
 }
 """
 
-@flow(stream=True)
 async def chat(input: ChatInputSchema) -> AsyncGenerator[str, None]:
-    # 1. Chuẩn bị nội dung prompt
-    prompt_parts = [{"text": input.message}]
-    if input.media:
-        for media in input.media:
-            prompt_parts.append({"media": {"url": media.url}})
-    
-    # 2. Chuẩn bị lịch sử chat
-    history_messages = []
-    if input.history:
-        for turn in input.history:
-            history_messages.append({
-                "role": turn.role,
-                "content": [{"text": turn.content}]
-            })
+    """
+    Hàm xử lý chat flow sử dụng Google Generative AI SDK trực tiếp.
+    """
+    # 1. Cấu hình Model
+    generation_config = {
+        "temperature": 0.7,
+        "max_output_tokens": 8192,
+        "response_mime_type": "application/json",
+        # "response_schema": ChatOutputSchema # Có thể bật nếu thư viện hỗ trợ
+    }
 
-    # 3. Gọi AI với cấu hình JSON output
-    stream = await ai.generate(
-        prompt={
-            "role": "user",
-            "content": prompt_parts
-        },
-        history=history_messages,
-        config=ai.GenerationConfig(
-            model=MODEL,
-            system_instruction=SYSTEM_INSTRUCTION,
-            # Quan trọng: Ép kiểu JSON để Frontend xử lý mindmap/geogebra
-            response_format=ai.ResponseFormat.JSON, 
-            response_schema=ChatOutputSchema
-        ),
-        stream=True
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        generation_config=generation_config,
+        system_instruction=SYSTEM_INSTRUCTION
     )
 
-    # 4. Stream kết quả trả về (Chuỗi JSON)
-    async for chunk in stream:
-        yield chunk.text
+    # 2. Chuyển đổi lịch sử chat sang định dạng Gemini
+    gemini_history = []
+    if input.history:
+        for turn in input.history:
+            # Map role: 'assistant' -> 'model'
+            role = "model" if turn.role == "assistant" else "user"
+            gemini_history.append({
+                "role": role,
+                "parts": [{"text": turn.content}]
+            })
+
+    # 3. Khởi tạo phiên chat
+    chat_session = model.start_chat(history=gemini_history)
+
+    # 4. Chuẩn bị tin nhắn hiện tại
+    user_parts = [{"text": input.message}]
+    
+    # Xử lý media nếu có (Cơ bản)
+    if input.media:
+        # Lưu ý: Cần xử lý tải file/blob thực tế nếu muốn support ảnh
+        # Ở đây tạm thời bỏ qua hoặc chỉ append text url để tránh lỗi
+        for media in input.media:
+             user_parts.append({"text": f"[User sent media: {media.url}]"})
+
+    # 5. Gửi tin nhắn và stream kết quả
+    # send_message_async trả về một awaitable response, response này có thể iter khi stream=True
+    response = await chat_session.send_message_async(user_parts, stream=True)
+
+    async for chunk in response:
+        if chunk.text:
+            yield chunk.text

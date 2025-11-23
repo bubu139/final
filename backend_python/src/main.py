@@ -16,6 +16,8 @@ from src.supabase_client import supabase
 
 # Import config
 from .ai_config import genai
+from src.ai_flows.chat_flow import chat as chat_flow
+from src.ai_schemas.chat_schema import ChatInputSchema
 
 
 app = FastAPI()
