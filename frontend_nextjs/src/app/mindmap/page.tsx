@@ -44,7 +44,7 @@ export default function MindmapPage() {
     load();
   }, [userId]);
 
-  if (loading) return <p>Đang tải...</p>;
+  if (loading) return <p className="text-center mt-10">Đang tải dữ liệu...</p>;
 
   // =================================================
   // HANDLE CLICK NODE
@@ -52,14 +52,24 @@ export default function MindmapPage() {
   async function handleNodeClick(node: MindMapNode) {
     setSelectedNode(node);
 
-    // Gọi API mở node
-    const updated = await openNode(userId, node.id);
+    // 🔥 FIX LOGIC: Chỉ mở node (reset về 0) nếu node đó CHƯA TỪNG được mở
+    // Nếu đã học rồi (có trong progress) thì giữ nguyên điểm, không gọi API reset
+    if (progress[node.id]) {
+      return;
+    }
 
-    // Update lại local progress để đổi màu node ngay
-    setProgress((prev) => ({
-      ...prev,
-      [node.id]: updated,
-    }));
+    // Nếu chưa học -> Gọi API mở node (tạo record mới với điểm 0)
+    try {
+      const updated = await openNode(userId, node.id);
+      
+      // Update lại local progress để đổi màu node ngay (từ xám -> xanh dương/đang học)
+      setProgress((prev) => ({
+        ...prev,
+        [node.id]: updated,
+      }));
+    } catch (error) {
+      console.error("Lỗi khi mở node:", error);
+    }
   }
 
   return (
@@ -78,6 +88,9 @@ export default function MindmapPage() {
           isOpen
           node={selectedNode}
           onClose={() => setSelectedNode(null)}
+          // 🔥 FIX: Truyền progress của node đang chọn vào Dialog
+          // Để Dialog biết được điểm số hiện tại và hiển thị đúng
+          currentProgress={progress[selectedNode.id]} 
         />
       )}
     </div>

@@ -1,84 +1,86 @@
-"use client";
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-import { useEffect, useState } from "react";
-import { getNodeProgress, openNode, updateNodeScore } from "@/lib/nodeProgressApi";
+export type NodeStatus = 'not_started' | 'learning' | 'mastered';
 
-// Status học của node
-export type NodeStatus = "not_started" | "learning" | "mastered";
+export function useNodeProgress(userId: string | null) {
+  const [progress, setProgress] = useState<Record<string, number>>({});
 
-// Kiểu dữ liệu đầy đủ của một node progress
-export type NodeProgress = {
-  status: NodeStatus;
-  score: number | null;      // điểm %
-  passed: boolean;           // score >= 80%
-};
+  const getStatus = (score: number | null | undefined): NodeStatus => {
+    if (score === null || score === undefined) return 'not_started';
+    if (score >= 80) return 'mastered';
+    if (score > 0) return 'learning';
+    return 'not_started';
+  };
 
-export function useNodeProgress(userId: string) {
-  const [progress, setProgress] = useState<Record<string, NodeProgress>>({});
-  const [loading, setLoading] = useState(true);
-
-  // Load dữ liệu khi đăng nhập
-  useEffect(() => {
+  const openNode = useCallback(async (nodeId: string) => {
     if (!userId) return;
-    loadProgress();
+    try {
+      await supabase.rpc('upsert_node_progress', {
+        p_user_id: userId,
+        p_node_id: nodeId,
+        p_score: 0
+      });
+
+      setProgress(prev => ({
+        ...prev,
+        [nodeId]: prev[nodeId] ?? 0
+      }));
+    } catch (err) {
+      console.error('Failed to open node:', err);
+    }
   }, [userId]);
 
-  // LOAD trạng thái học từ API
-  async function loadProgress() {
-    setLoading(true);
-    const data = await getNodeProgress(userId);
+  const updateNodeScore = useCallback(async (nodeId: string, score: number) => {
+    if (!userId) return;
+    try {
+      const { error } = await supabase.rpc('upsert_node_progress', {
+        p_user_id: userId,
+        p_node_id: nodeId,
+        p_score: score
+      });
 
-    // data trả về dạng:
-    // { nodeId: { status, score, passed } }
-    setProgress(data || {});
-    setLoading(false);
-  }
+      if (error) throw error;
 
-  // Khi mở node (user click xem lý thuyết)
-  async function markNodeOpened(nodeId: string) {
-    const res = await openNode(userId, nodeId);
+      setProgress(prev => ({
+        ...prev,
+        [nodeId]: Math.max(score, prev[nodeId] ?? 0) // 🔥 giữ max score
+      }));
+    } catch (err) {
+      console.error('Failed to update node score:', err);
+    }
+  }, [userId]);
 
-    setProgress((prev) => ({
-      ...prev,
-      [nodeId]: {
-        status: res.status,
-        score: prev[nodeId]?.score ?? null,
-        passed: prev[nodeId]?.passed ?? false
-      }
-    }));
-  }
+  const fetchProgress = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('node_progress')
+        .select('node_id, score')
+        .eq('user_id', userId);
 
-  // Cập nhật điểm bài kiểm tra
-  async function updateScore(nodeId: string, score: number) {
-    const passed = score >= 80;
-    const res = await updateNodeScore(userId, nodeId, score);
+      if (error) throw error;
 
-    setProgress((prev) => ({
-      ...prev,
-      [nodeId]: {
-        status: res.status, 
-        score,
-        passed
-      }
-    }));
-  }
+      const newProgress: Record<string, number> = {};
+      data?.forEach((row: any) => {
+        newProgress[row.node_id] = row.score ?? 0;
+      });
 
-  // ⭐⭐ NEW: Cập nhật local state mà không gọi API
-  function updateNodeProgress(nodeId: string, updates: Partial<NodeProgress>) {
-    setProgress(prev => ({
-      ...prev,
-      [nodeId]: {
-        ...prev[nodeId],
-        ...updates
-      }
-    }));
-  }
+      setProgress(newProgress);
+    } catch (err) {
+      console.error('Failed to fetch node progress:', err);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    fetchProgress();
+  }, [fetchProgress]);
 
   return {
     progress,
-    loading,
-    markNodeOpened,
-    updateScore,
-    updateNodeProgress,   // ⭐ thêm vào return
+    openNode,
+    updateNodeScore,
+    getStatus,
+    refreshProgress: fetchProgress
   };
 }
