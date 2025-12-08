@@ -13,4 +13,9 @@ python-multipart
 aiofiles
 supabase
 flask-cors
+sqlmodel
+psycopg2-binary
 
+
+edge-tts
+aiofiles
