@@ -3,7 +3,7 @@ import genkit.ai as ai
 from genkit import flow
 from pydantic import BaseModel, Field
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-1.5-flash"
 
 class SummarizeTopicInput(BaseModel):
   topic: str = Field(description='The topic to summarize.')
