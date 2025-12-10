@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from ..ai_schemas.chat_schema import ChatInputSchema, ChatOutputSchema
 from ..ai_config import genai  # Sử dụng cấu hình từ ai_config.py
 
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemini-2.5-flash"
 
 # --- SYSTEM INSTRUCTION ---
 # Đưa instruction vào đây để Flow tự quản lý
