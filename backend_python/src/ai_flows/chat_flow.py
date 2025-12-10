@@ -1,14 +1,17 @@
 # src/ai_flows/chat_flow.py
 import asyncio
+import os
+import tempfile
+import httpx 
 from typing import AsyncGenerator
-from ..ai_schemas.chat_schema import ChatInputSchema, ChatOutputSchema
-from ..ai_config import genai  # Sử dụng cấu hình từ ai_config.py
+from ..ai_schemas.chat_schema import ChatInputSchema
+from ..ai_config import genai 
+from ..services.audio_service import transcribe_audio # Import service
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-flash" # Khuyên dùng 1.5 Flash vì ổn định hơn bản 2.5/Experimental
 
-# --- SYSTEM INSTRUCTION ---
-# Đưa instruction vào đây để Flow tự quản lý
-SYSTEM_INSTRUCTION = """
+
+SYSTEM_INSTRUCTION = SYSTEM_INSTRUCTION = """
 Bạn là một AI gia sư toán học THPT lớp 12 Việt Nam tâm huyết và chuyên nghiệp.
 Triết lý: "Không giải bài thay học sinh, mà trang bị tư duy để học sinh TỰ TIN giải quyết vấn đề."
 
@@ -66,16 +69,31 @@ Bạn phải trả về JSON khớp với schema sau:
 }
 """
 
+
+async def download_file_from_url(url: str) -> str:
+    """Tải file từ URL về thư mục tạm"""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            
+            # Lấy đuôi file hoặc mặc định mp3
+            ext = os.path.splitext(url)[1] or ".mp3"
+            if "?" in ext: ext = ext.split("?")[0]
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp.write(resp.content)
+                return tmp.name
+    except Exception as e:
+        print(f"❌ Error downloading file: {e}")
+        return None
+
 async def chat(input: ChatInputSchema) -> AsyncGenerator[str, None]:
-    """
-    Hàm xử lý chat flow sử dụng Google Generative AI SDK trực tiếp.
-    """
     # 1. Cấu hình Model
     generation_config = {
         "temperature": 0.7,
         "max_output_tokens": 8192,
         "response_mime_type": "application/json",
-        # "response_schema": ChatOutputSchema # Có thể bật nếu thư viện hỗ trợ
     }
 
     model = genai.GenerativeModel(
@@ -84,34 +102,58 @@ async def chat(input: ChatInputSchema) -> AsyncGenerator[str, None]:
         system_instruction=SYSTEM_INSTRUCTION
     )
 
-    # 2. Chuyển đổi lịch sử chat sang định dạng Gemini
+    # 2. History
     gemini_history = []
     if input.history:
         for turn in input.history:
-            # Map role: 'assistant' -> 'model'
             role = "model" if turn.role == "assistant" else "user"
             gemini_history.append({
                 "role": role,
                 "parts": [{"text": turn.content}]
             })
 
-    # 3. Khởi tạo phiên chat
-    chat_session = model.start_chat(history=gemini_history)
+    # 3. XỬ LÝ MESSAGE & AUDIO
+    user_parts = []
+    msg_text = input.message
+    temp_files_to_delete = []
 
-    # 4. Chuẩn bị tin nhắn hiện tại
-    user_parts = [{"text": input.message}]
-    
-    # Xử lý media nếu có (Cơ bản)
     if input.media:
-        # Lưu ý: Cần xử lý tải file/blob thực tế nếu muốn support ảnh
-        # Ở đây tạm thời bỏ qua hoặc chỉ append text url để tránh lỗi
         for media in input.media:
-             user_parts.append({"text": f"[User sent media: {media.url}]"})
+            # Nếu là Audio -> Tải về & Transcribe
+            if media.type and media.type.startswith("audio/"):
+                print(f"🎤 Detected audio: {media.url}")
+                local_path = await download_file_from_url(media.url)
+                
+                if local_path:
+                    temp_files_to_delete.append(local_path)
+                    # Gọi service chuyển đổi
+                    transcript = await transcribe_audio(local_path, mime_type=media.type)
+                    print(f"📝 Transcript: {transcript}")
+                    
+                    # Nối nội dung vào tin nhắn cho AI đọc
+                    msg_text += f"\n\n[Học sinh gửi ghi âm: \"{transcript}\"]"
+                else:
+                    msg_text += f"\n[Lỗi tải file ghi âm]"
+            
+            # Nếu là Ảnh -> Gửi trực tiếp url (Gemini hỗ trợ ảnh qua url nếu config đúng, 
+            # nhưng tốt nhất vẫn nên tải về nếu gặp lỗi permission. 
+            # Ở đây tạm giữ logic cũ cho ảnh)
+            else:
+                 user_parts.append({"text": f"[User sent media: {media.url}]"})
 
-    # 5. Gửi tin nhắn và stream kết quả
-    # send_message_async trả về một awaitable response, response này có thể iter khi stream=True
-    response = await chat_session.send_message_async(user_parts, stream=True)
+    user_parts.append({"text": msg_text})
 
-    async for chunk in response:
-        if chunk.text:
-            yield chunk.text
+    # 4. Gửi & Stream
+    try:
+        chat_session = model.start_chat(history=gemini_history)
+        response = await chat_session.send_message_async(user_parts, stream=True)
+
+        async for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+    finally:
+        # Dọn dẹp file tạm local
+        for path in temp_files_to_delete:
+            if os.path.exists(path):
+                os.remove(path)
