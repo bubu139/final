@@ -65,6 +65,8 @@ async def embed_texts(texts: List[str]) -> List[List[float]]:
         return []
 
     def _embed_batch() -> Any:
+        # Lưu ý: Một số version cũ dùng task_type="retrieval_document"
+        # Version mới có thể không yêu cầu hoặc dùng title
         return genai.embed_content(
             model=EMBEDDING_MODEL,
             content=texts,
@@ -76,6 +78,7 @@ async def embed_texts(texts: List[str]) -> List[List[float]]:
         response = await loop.run_in_executor(None, _embed_batch)
     except Exception as exc:  # pragma: no cover - network/service failure
         print(f"Error during batch embedding: {exc}")
+        # Fallback: chạy từng cái một nếu batch lỗi
         single_tasks = [
             loop.run_in_executor(
                 None,
@@ -92,19 +95,65 @@ async def embed_texts(texts: List[str]) -> List[List[float]]:
         for resp in responses:
             if isinstance(resp, Exception):
                 embeddings.append([])
-            elif isinstance(resp, dict) and "embedding" in resp:
-                embeddings.append(list(map(float, resp.get("embedding", []))))
             else:
-                embeddings.append([])
+                # Xử lý response đơn lẻ an toàn hơn
+                emb = _extract_embedding_from_response(resp)
+                embeddings.append(emb if emb else [])
         return embeddings
 
+    return _extract_embeddings_from_batch_response(response, expected_count=len(texts))
+
+def _extract_embedding_from_response(response: Any) -> List[float]:
+    """Helper extraction for single item response."""
+    # Chuyển đổi sang dict nếu là object của SDK
+    if hasattr(response, "to_dict"):
+        response = response.to_dict()
+    elif not isinstance(response, dict):
+        try:
+            response = dict(response)
+        except:
+            pass
+
     if isinstance(response, dict):
+        if "embedding" in response:
+            return list(map(float, response["embedding"]))
+        # Trường hợp hiếm: trả về embeddings list có 1 phần tử
+        if "embeddings" in response and len(response["embeddings"]) > 0:
+             return list(map(float, response["embeddings"][0]))
+    return []
+
+def _extract_embeddings_from_batch_response(response: Any, expected_count: int) -> List[List[float]]:
+    """Helper extraction for batch response."""
+    # Chuyển đổi sang dict nếu là object
+    if hasattr(response, "to_dict"):
+        response = response.to_dict()
+    elif not isinstance(response, dict):
+        try:
+            response = dict(response)
+        except:
+            return []
+
+    if isinstance(response, dict):
+        # Trường hợp 1: Key chuẩn 'embeddings' (plural)
         if "embeddings" in response and isinstance(response["embeddings"], list):
             return [list(map(float, emb)) for emb in response["embeddings"]]
+        
+        # Trường hợp 2: Key 'embedding' (singular) nhưng chứa list of lists
+        if "embedding" in response:
+            emb_data = response["embedding"]
+            if isinstance(emb_data, list) and len(emb_data) > 0:
+                # Kiểm tra phần tử đầu tiên xem có phải là list không
+                if isinstance(emb_data[0], list):
+                    return [list(map(float, emb)) for emb in emb_data]
+                else:
+                    # Nếu là list of float (single embedding) -> có thể API trả về sai logic batch
+                    # Hoặc chỉ có 1 text input. Nhân bản hoặc wrap lại
+                    single_emb = list(map(float, emb_data))
+                    return [single_emb] * expected_count
+
+        # Trường hợp 3: OpenAI style 'data'
         if "data" in response and isinstance(response["data"], list):
             return [list(map(float, row.get("embedding", []))) for row in response["data"]]
-        if "embedding" in response:
-            return [list(map(float, response["embedding"])) for _ in texts]
 
     return []
 
@@ -141,7 +190,9 @@ async def index_document_from_file(
     document_id = document_response.data[0]["id"]
 
     chunk_rows = []
+    # Dùng zip an toàn, nếu số lượng không khớp sẽ dừng ở list ngắn hơn
     for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        if not embedding: continue # Bỏ qua chunk lỗi
         chunk_rows.append(
             {
                 "document_id": document_id,
