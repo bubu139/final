@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MindMapNode } from '@/types/mindmap';
 import ReactMarkdown from 'react-markdown';
-import { Loader, Sparkles, PencilRuler, BrainCircuit, Clapperboard } from 'lucide-react';
+import { Loader, Sparkles, PencilRuler, BrainCircuit } from 'lucide-react';
 import { Separator } from '../ui/separator';
 import { API_BASE_URL } from '@/lib/utils';
 // 🔥 FIX 1: Import API trực tiếp thay vì hook cũ
@@ -163,13 +163,6 @@ export function NodeDetailDialog({ node, isOpen, onClose, currentProgress }: Nod
         </ScrollArea>
 
         <DialogFooter className="p-6 pt-4 border-t bg-background flex gap-3">
-          <Link href={`/videos/${node.id}?title=${encodeURIComponent(node.label)}`}>
-            <Button variant="default" className="w-full">
-              <Clapperboard className="mr-2 h-4 w-4" />
-              Tạo video bài giảng
-            </Button>
-          </Link>
-
           <Button onClick={handleGenerateExercises} disabled={isExercisesLoading}>
             {isExercisesLoading ? <Loader className="animate-spin mr-2" /> : <Sparkles className="mr-2" />}
             {isExercisesLoading ? "Đang tạo..." : "Tạo bài tập mới"}

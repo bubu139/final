@@ -1,9 +1,21 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Check, SwitchCamera, Loader2, CameraOff } from 'lucide-react';
+import {
+  RefreshCw,
+  Check,
+  SwitchCamera,
+  Loader2,
+  CameraOff,
+} from 'lucide-react';
 
 interface CameraCaptureDialogProps {
   open: boolean;
@@ -11,223 +23,269 @@ interface CameraCaptureDialogProps {
   onCapture: (file: File) => void;
 }
 
-export function CameraCaptureDialog({ open, onOpenChange, onCapture }: CameraCaptureDialogProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  
+export function CameraCaptureDialog({
+  open,
+  onOpenChange,
+  onCapture,
+}: CameraCaptureDialogProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
-  // 🔥 FIX 1: Mặc định dùng 'user' (Camera trước/Webcam) để không bị đen màn hình trên Laptop
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); 
 
-  // Hàm tắt camera
+  // Mặc định camera trước
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-  }, [stream]);
+    setStream(prev => {
+      if (prev) {
+        prev.getTracks().forEach(track => track.stop());
+      }
+      return null;
+    });
+  }, []);
 
-  // Khởi động Camera
   const startCamera = useCallback(async () => {
+    // nếu đã có stream rồi thì không khởi động lại
+    if (stream) return;
+
     setIsLoading(true);
     setError(null);
 
     try {
-      // Tắt stream cũ nếu đang chạy
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      
-      console.log("Đang yêu cầu camera với mode:", facingMode);
-
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: facingMode,
-          // 🔥 FIX 2: Bỏ width/height cứng để tránh lỗi driver trên một số máy
-          // Trình duyệt sẽ tự chọn độ phân giải tốt nhất
-        },
-        audio: false
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode },
+        audio: false,
       });
-      
-      setStream(newStream);
+
+      setStream(mediaStream);
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = mediaStream;
+        await video.play().catch(() => {
+          // ignore play errors (autoplay policies...)
+        });
+      }
     } catch (err: any) {
-      console.error("Lỗi Camera:", err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError("Vui lòng cho phép quyền truy cập Camera trên trình duyệt.");
-      } else if (err.name === 'NotFoundError') {
-        setError("Không tìm thấy thiết bị Camera nào.");
+      console.error('Lỗi Camera:', err);
+      if (
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError'
+      ) {
+        setError('Vui lòng cho phép quyền truy cập camera trong trình duyệt.');
+      } else if (err?.name === 'NotFoundError') {
+        setError('Không tìm thấy thiết bị camera.');
       } else {
-        setError("Không thể bật Camera. Hãy thử tải lại trang hoặc kiểm tra kết nối.");
+        setError(
+          'Không thể bật camera. Hãy kiểm tra thiết bị và thử tải lại trang.',
+        );
       }
     } finally {
       setIsLoading(false);
     }
-  }, [facingMode]); // Lưu ý: bỏ stream ra khỏi deps để tránh loop
+  }, [facingMode, stream]);
 
-  // Quản lý vòng đời mở/đóng dialog
+  // Gán stream vào video mỗi khi stream thay đổi
+  useEffect(() => {
+    if (!stream || !videoRef.current) return;
+
+    const video = videoRef.current;
+    video.srcObject = stream;
+    video
+      .play()
+      .catch(() => {
+        /* ignore */
+      });
+
+    return () => {
+      video.pause();
+    };
+  }, [stream]);
+
+  // Khi dialog mở/đóng
   useEffect(() => {
     if (open && !capturedImage) {
       startCamera();
-    } else {
+    } else if (!open) {
       stopCamera();
+      setCapturedImage(null);
+      setError(null);
     }
-    // Cleanup khi unmount
-    return () => {
-        // stream track stop handled in stopCamera but we can't call it easily in cleanup without ref
-        // React handles cleanup of effects well usually
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, capturedImage]); // Chỉ chạy lại khi mở/đóng hoặc chụp xong
+  }, [open, capturedImage, startCamera, stopCamera]);
 
-  // 🔥 FIX 3: Gán stream vào video và ép chạy (Play)
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current?.play().catch(e => console.error("Lỗi phát video:", e));
-      };
-    }
-  }, [stream]);
-
-  // Chụp ảnh
   const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      
-      // Lấy kích thước thực của video đang phát
-      const width = video.videoWidth;
-      const height = video.videoHeight;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
 
-      canvas.width = width;
-      canvas.height = height;
-      
-      const context = canvas.getContext('2d');
-      if (context) {
-        // Lật ảnh nếu đang dùng camera trước (để ảnh chụp giống như nhìn gương)
-        if (facingMode === 'user') {
-           context.translate(width, 0);
-           context.scale(-1, 1);
-        }
+    const width = video.videoWidth || video.clientWidth || 720;
+    const height = video.videoHeight || video.clientHeight || 1280;
 
-        context.drawImage(video, 0, 0, width, height);
-        
-        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        setCapturedImage(imageDataUrl);
-        stopCamera();
-      }
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Lật gương nếu dùng camera trước
+    if (facingMode === 'user') {
+      ctx.save();
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
     }
-  };
 
-  const handleConfirm = async () => {
-    if (capturedImage) {
-      const res = await fetch(capturedImage);
-      const blob = await res.blob();
-      const file = new File([blob], `cam-${Date.now()}.jpg`, { type: "image/jpeg" });
-      onCapture(file);
-      handleClose();
+    ctx.drawImage(video, 0, 0, width, height);
+
+    if (facingMode === 'user') {
+      ctx.restore();
     }
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    setCapturedImage(dataUrl);
+    stopCamera();
   };
 
   const handleRetake = () => {
     setCapturedImage(null);
-    // startCamera sẽ tự chạy lại nhờ useEffect phụ thuộc vào capturedImage
+    setError(null);
+    startCamera();
+  };
+
+  const handleConfirm = async () => {
+    if (!capturedImage) return;
+    const res = await fetch(capturedImage);
+    const blob = await res.blob();
+    const file = new File([blob], `cam-${Date.now()}.jpg`, {
+      type: 'image/jpeg',
+    });
+    onCapture(file);
+    handleClose();
   };
 
   const handleClose = () => {
     stopCamera();
     setCapturedImage(null);
+    setError(null);
     onOpenChange(false);
   };
 
   const toggleCamera = () => {
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    setFacingMode(prev => (prev === 'user' ? 'environment' : 'user'));
+    // facingMode đổi ⇒ effect phía trên sẽ gọi startCamera lại
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md p-0 overflow-hidden bg-black border-slate-800 text-white gap-0">
+        {/* Bắt buộc phải có DialogTitle cho Radix, ẩn bằng sr-only */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>Chụp ảnh bài tập</DialogTitle>
+          <DialogDescription>
+            Sử dụng camera để chụp lại đề bài cần giải.
+          </DialogDescription>
+        </DialogHeader>
+
         <div className="relative aspect-[3/4] bg-slate-900 flex items-center justify-center overflow-hidden">
-          
-          {/* VIDEO STREAM */}
+          {/* VIDEO */}
           {!capturedImage && !error && (
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              // Lật gương nếu là camera trước để tự nhiên hơn
-              className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} 
+              className={`w-full h-full object-cover ${
+                facingMode === 'user' ? 'scale-x-[-1]' : ''
+              }`}
+            />
+          )}
+
+          {/* ẢNH ĐÃ CHỤP */}
+          {capturedImage && (
+            <img
+              src={capturedImage}
+              alt="Ảnh chụp"
+              className="w-full h-full object-cover"
             />
           )}
 
           {/* LOADING */}
           {isLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-10">
-                <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-2" />
-                <span className="text-sm text-slate-400">Đang bật Camera...</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40">
+              <Loader2 className="w-8 h-8 animate-spin text-white" />
+              <p className="text-sm text-slate-100">Đang bật camera…</p>
             </div>
           )}
 
-          {/* ẢNH ĐÃ CHỤP */}
-          {capturedImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={capturedImage} alt="Captured" className="w-full h-full object-contain bg-black" />
-          )}
-
-          {/* HIỂN THỊ LỖI */}
+          {/* LỖI CAMERA */}
           {error && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 p-6 text-center z-20">
-                <CameraOff className="w-12 h-12 text-red-500 mb-4" />
-                <p className="text-red-400 font-medium mb-2">Lỗi Camera</p>
-                <p className="text-sm text-slate-400">{error}</p>
-                <Button variant="outline" className="mt-4 border-slate-600 text-black hover:bg-slate-800 hover:text-white" onClick={handleClose}>
-                    Đóng
-                </Button>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 px-4 text-center">
+              <CameraOff className="w-10 h-10 text-slate-300" />
+              <p className="text-sm text-slate-100">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={startCamera}
+                className="bg-white/10 border-slate-500 text-white hover:bg-white/20"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Thử lại
+              </Button>
             </div>
           )}
 
-          {/* NÚT ĐẢO CAMERA (Chỉ hiện khi đang xem live và không lỗi) */}
-          {!capturedImage && !error && !isLoading && (
-            <Button 
-              variant="secondary" 
-              size="icon" 
-              className="absolute top-4 right-4 rounded-full bg-black/40 hover:bg-black/60 text-white border-none backdrop-blur-md z-10"
+          {/* NÚT ĐỔI CAMERA (khi không lỗi & chưa chụp) */}
+          {!capturedImage && !error && (
+            <button
+              type="button"
               onClick={toggleCamera}
-              title="Đổi Camera"
+              className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/40 backdrop-blur flex items-center justify-center text-white border border-white/30 hover:bg-black/60 transition"
             >
-              <SwitchCamera className="w-5 h-5" />
-            </Button>
+              <SwitchCamera className="w-4 h-4" />
+            </button>
           )}
         </div>
 
-        {/* CONTROLS AREA */}
-        <div className="p-6 bg-slate-950 flex justify-between items-center h-24">
+        {/* THANH BUTTON DƯỚI */}
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4">
           {!capturedImage ? (
             <>
-              <Button variant="ghost" className="text-white hover:bg-white/10" onClick={handleClose}>
+              <Button
+                variant="ghost"
+                className="text-white hover:bg-white/10"
+                onClick={handleClose}
+              >
                 Hủy
               </Button>
-              
-              <button 
-                className="w-16 h-16 rounded-full border-4 border-white ring-2 ring-offset-2 ring-offset-slate-950 ring-blue-500 bg-white/10 hover:bg-white/30 active:scale-95 transition-all disabled:opacity-50"
+
+              <button
+                type="button"
+                className="w-16 h-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/30 active:scale-95 transition-all disabled:opacity-50"
                 onClick={handleCapture}
                 disabled={!!error || isLoading}
               />
-              
-              <div className="w-16"></div> 
+
+              <div className="w-16" />
             </>
           ) : (
             <div className="flex w-full gap-4">
-              <Button variant="outline" onClick={handleRetake} className="flex-1 border-slate-700 bg-transparent text-white hover:bg-white/10 hover:text-white">
-                <RefreshCw className="w-4 h-4 mr-2" /> Chụp lại
+              <Button
+                variant="outline"
+                onClick={handleRetake}
+                className="flex-1 bg-transparent text-white border-slate-500 hover:bg-white/10 hover:text-white"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Chụp lại
               </Button>
-              <Button onClick={handleConfirm} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-none">
-                <Check className="w-4 h-4 mr-2" /> Sử dụng
+              <Button
+                onClick={handleConfirm}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-none"
+              >
+                <Check className="w-4 h-4 mr-2" />
+                Sử dụng
               </Button>
             </div>
           )}

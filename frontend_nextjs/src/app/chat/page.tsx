@@ -4,8 +4,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-// 🔥 UPDATE: Thêm icon Camera, Mic, Volume
-import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2, Camera, Mic, Volume2, StopCircle } from 'lucide-react';
+// 🔥 UPDATE: Thêm icon Camera
+import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2, Camera } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import { MathInput } from '@/components/ui/math-input';
@@ -79,18 +79,31 @@ const updateNodeScore = async (nodeId: string, score: number) => {
 
 // --- DANH SÁCH CÔNG CỤ "SMART" (GIỮ NGUYÊN) ---
 const SMART_TOOLS = [
-  { label: 'x²', latex: 'x^2' },
-  { label: 'aⁿ', latex: '#?^{#?}' },
-  { label: '√', latex: '\\sqrt{#?}' },
-  { label: '√n', latex: '\\sqrt[#?]{#?}' },
-  { label: '÷', latex: '\\frac{#?}{#?}' },
-  { label: '∫', latex: '\\int_{#?}^{#?}' },
-  { label: 'Σ', latex: '\\sum_{#?}^{#?}' },
-  { label: '( )', latex: '\\left(#?\\right)' },
+  { label: 'x²', latex: 'x^2' },                  
+  { label: 'aⁿ', latex: '#?^{#?}' },              
+  { label: '√',  latex: '\\sqrt{#?}' },           
+  { label: '√n', latex: '\\sqrt[#?]{#?}' },       
+  { label: '÷',  latex: '\\frac{#?}{#?}' },       
+  { label: '∫',  latex: '\\int_{#?}^{#?}' },      
+  { label: 'Σ',  latex: '\\sum_{#?}^{#?}' },      
+  { label: '( )', latex: '\\left(#?\\right)' },   
 ];
 
 // --- DANH SÁCH KÝ TỰ CHO POPOVER (GIỮ NGUYÊN) ---
 const latexSymbols = [
+  {
+    label: "Mẫu công thức",
+    symbols: [
+      { display: "x²", insert: "x^2" },
+      { display: "aⁿ", insert: "#?^{#?}" },
+      { display: "√",  insert: "\\sqrt{#?}" },
+      { display: "√n", insert: "\\sqrt[#?]{#?}" },
+      { display: "÷",  insert: "\\frac{#?}{#?}" },
+      { display: "∫",  insert: "\\int_{#?}^{#?}" },
+      { display: "Σ",  insert: "\\sum_{#?}^{#?}" },
+      { display: "( )", insert: "\\left(#?\\right)" },
+    ]
+  },
   {
     label: "Toán tử",
     symbols: [
@@ -124,29 +137,20 @@ const latexSymbols = [
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [mindmapUpdates, setMindmapUpdates] = useState<MindmapInsightPayload[]>([]);
   const [geogebraSuggestion, setGeogebraSuggestion] = useState<GeogebraSuggestion | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // 🔥 UPDATE: State điều khiển Modal Camera
   const [isCameraOpen, setIsCameraOpen] = useState(false);
 
-  // 🔥 UPDATE: Voice Mode State
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  // Refs
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
-  const mathFieldRef = useRef<MathfieldElement>(null);
+  const mathFieldRef = useRef<MathfieldElement>(null); 
 
   useEffect(() => {
     setMessages([{
@@ -158,22 +162,19 @@ export default function ChatPage() {
   const handleInsertSymbol = (latex: string) => {
     const mf = mathFieldRef.current;
     if (mf) {
-      mf.executeCommand(['insert', latex, {
-        focus: true,
+      mf.executeCommand(['insert', latex, { 
+        focus: true, 
         feedback: true,
         mode: 'math'
       }]);
     }
   };
 
-  const handleSend = async (e?: FormEvent, overrideText?: string) => {
+  const handleSend = async (e?: FormEvent) => {
     if (e) e.preventDefault();
+    if (!input.trim() && attachedFiles.length === 0) return;
 
-    const textToSend = overrideText !== undefined ? overrideText : input;
-
-    if (!textToSend.trim() && attachedFiles.length === 0) return;
-
-    const normalizedInput = textToSend.trim();
+    const normalizedInput = input.trim();
     const userVisibleText = normalizedInput || '📎 Đã gửi file đính kèm';
     const userMessage: Message = { text: userVisibleText, isUser: true, files: attachedFiles };
 
@@ -188,7 +189,6 @@ export default function ChatPage() {
     setMessages(prev => [...prev, userMessage]);
 
     const currentFiles = attachedFiles;
-    // 🔥 UPDATE: Nếu người dùng gửi ảnh không kèm lời nhắn, AI tự hiểu
     const apiMessage = normalizedInput || 'Tôi vừa gửi ảnh bài tập. Hãy nhận diện và hướng dẫn giải chi tiết.';
 
     setInput('');
@@ -211,7 +211,7 @@ export default function ChatPage() {
         try {
           const errJson = await response.json();
           errorText = errJson.detail || errJson.error || errorText;
-        } catch { }
+        } catch {}
         throw new Error(errorText);
       }
 
@@ -223,10 +223,11 @@ export default function ChatPage() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
+      // 🔥 BLOCK MINDMAP ĐÃ SỬA
       if (Array.isArray(result.mindmap_insights) && result.mindmap_insights.length > 0) {
         const normalized: MindmapInsightPayload[] = result.mindmap_insights
           .filter((node): node is ApiMindmapInsight => Boolean(node && node.node_id && node.label))
-          .map(node => ({
+          .map((node) => ({
             nodeId: node.node_id,
             parentNodeId: node.parent_node_id ?? null,
             label: node.label,
@@ -238,9 +239,14 @@ export default function ChatPage() {
 
         if (normalized.length > 0) {
           setMindmapUpdates(normalized);
-          upsertMindmapInsights(normalized);
 
-          normalized.forEach(node => {
+          try {
+            await upsertMindmapInsights(normalized);
+          } catch (err) {
+            console.error('Lỗi lưu mindmap:', err);
+          }
+
+          normalized.forEach((node) => {
             updateNodeScore(node.nodeId, 100);
           });
         }
@@ -259,26 +265,6 @@ export default function ChatPage() {
       } else {
         setGeogebraSuggestion(null);
       }
-
-      // 🔥 UPDATE: TTS Playback
-      if (isVoiceMode && result.reply) {
-        try {
-          const ttsRes = await fetch(`${API_BASE_URL}/api/tts`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: result.reply })
-          });
-          if (ttsRes.ok) {
-            const audioBlob = await ttsRes.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.play();
-          }
-        } catch (e) {
-          console.error("TTS Error:", e);
-        }
-      }
-
     } catch (error: any) {
       console.error('Lỗi Chat:', error);
       setMessages(prev => [...prev, { text: `Lỗi: ${error.message}`, isUser: false }]);
@@ -312,14 +298,13 @@ export default function ChatPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 🔥 UPDATE: Hàm xử lý ảnh chụp từ Camera
   const handleCameraCapture = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const newFile: AttachedFile = {
-        name: `camera_capture.jpg`, // Đặt tên file
+        name: `camera_capture.jpg`,
         type: file.type,
-        content: e.target?.result as string, // Base64
+        content: e.target?.result as string,
       };
       setAttachedFiles(prev => [...prev, newFile]);
     };
@@ -328,67 +313,6 @@ export default function ChatPage() {
 
   const removeFile = (index: number) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // 🔥 UPDATE: Voice Recording Functions
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await handleVoiceInput(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-      alert("Không thể truy cập microphone! Hãy kiểm tra quyền truy cập.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const handleVoiceInput = async (audioBlob: Blob) => {
-    setIsLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, "recording.webm");
-
-      const res = await fetch(`${API_BASE_URL}/api/stt`, {
-        method: "POST",
-        body: formData
-      });
-
-      if (!res.ok) throw new Error("Lỗi nhận diện giọng nói");
-
-      const data = await res.json();
-      if (data.text) {
-        setInput(data.text);
-        handleSend(undefined, data.text);
-      }
-    } catch (e) {
-      console.error(e);
-      setMessages(prev => [...prev, { text: "Lỗi nhận diện giọng nói.", isUser: false }]);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   useEffect(() => {
@@ -417,7 +341,6 @@ export default function ChatPage() {
     };
   }, []);
 
-
   return (
     <div className="flex flex-col h-full bg-white rounded-3xl shadow-2xl overflow-hidden border border-blue-100 relative">
       {/* HEADER */}
@@ -435,18 +358,6 @@ export default function ChatPage() {
             Đang hoạt động
           </p>
         </div>
-
-        {/* 🔥 UPDATE: Voice Mode Toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("text-white hover:bg-white/20", isVoiceMode && "bg-white/20 ring-2 ring-white/50")}
-          onClick={() => setIsVoiceMode(!isVoiceMode)}
-          title={isVoiceMode ? "Tắt chế độ giọng nói" : "Bật chế độ giọng nói"}
-        >
-          {isVoiceMode ? <Volume2 className="w-6 h-6" /> : <Mic className="w-6 h-6 opacity-70" />}
-        </Button>
-
         <Sparkles className="w-6 h-6 text-orange-200 animate-pulse" />
       </header>
 
@@ -475,14 +386,14 @@ export default function ChatPage() {
                   <ReactMarkdown
                     components={{
                       code: ({ node, className, children, ...props }: any) => {
-                        return <code className={className} {...props}>{children}</code>
+                        return <code className={className} {...props}>{children}</code>;
                       }
                     }}
                   >
                     {message.text}
                   </ReactMarkdown>
                 </div>
-
+                
                 {message.files && message.files.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {message.files.map((file, i) => (
@@ -519,7 +430,7 @@ export default function ChatPage() {
               </div>
             </div>
           )}
-
+          
           {geogebraSuggestion && (
             <Card className="border-blue-200 bg-white/90 shadow-md">
               <CardHeader className="flex flex-row items-center justify-between py-3">
@@ -543,28 +454,14 @@ export default function ChatPage() {
               </CardContent>
             </Card>
           )}
-
+          
           <div ref={endRef} />
         </div>
       </div>
 
       {/* INPUT AREA */}
       <div ref={inputContainerRef} className="fixed bottom-0 left-0 right-0 p-3 sm:px-4 sm:py-4 bg-white border-t border-blue-100 z-10 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
-
-        {/* THANH CÔNG CỤ NHANH */}
-        <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-hide">
-          {SMART_TOOLS.map((tool, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleInsertSymbol(tool.latex)}
-              className="flex-shrink-0 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-serif border border-blue-200 transition-colors"
-            >
-              {tool.label}
-            </button>
-          ))}
-        </div>
-
+        
         {/* FILES PREVIEW */}
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -594,11 +491,11 @@ export default function ChatPage() {
             <Paperclip className="w-5 h-5" />
           </Button>
 
-          {/* 🔥 UPDATE: Nút Camera Mới */}
+          {/* Nút Camera */}
           <Button
             type="button" variant="ghost"
             className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-blue-600"
-            onClick={() => setIsCameraOpen(true)} // Mở modal
+            onClick={() => setIsCameraOpen(true)}
             disabled={isLoading}
             title="Chụp ảnh bài tập"
           >
@@ -622,7 +519,7 @@ export default function ChatPage() {
                         <Button
                           key={symbol.display} variant="ghost" size="sm"
                           className="h-8 text-lg font-serif"
-                          onClick={() => handleInsertSymbol(symbol.insert)}
+                          onClick={() => handleInsertSymbol(symbol.insert)} 
                         >
                           {symbol.display}
                         </Button>
@@ -646,32 +543,17 @@ export default function ChatPage() {
             />
           </div>
 
-          {/* SEND BUTTON OR MIC BUTTON */}
-          {isVoiceMode ? (
-            <Button
-              type="button"
-              onClick={isRecording ? stopRecording : startRecording}
-              className={cn(
-                "flex-shrink-0 w-12 h-12 rounded-xl shadow-lg transition-all duration-300",
-                isRecording
-                  ? "bg-red-500 hover:bg-red-600 animate-pulse"
-                  : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-              )}
-            >
-              {isRecording ? <StopCircle className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={() => handleSend()}
-              className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl shadow-lg"
-              disabled={isLoading || (!input.trim() && attachedFiles.length === 0)}
-            >
-              <Send className="w-5 h-5" />
-            </Button>
-          )}
+          {/* SEND BUTTON */}
+          <Button
+            type="button"
+            onClick={() => handleSend()}
+            className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl shadow-lg"
+            disabled={isLoading || (!input.trim() && attachedFiles.length === 0)}
+          >
+            <Send className="w-5 h-5" />
+          </Button>
         </div>
-
+        
         <p className="text-[10px] text-gray-400 mt-2 text-center">
           Shift + Enter xuống dòng • Hỗ trợ LaTeX
         </p>
@@ -690,9 +572,9 @@ export default function ChatPage() {
         onConsumeAutoCommands={() => setGeogebraSuggestion(prev => prev ? { ...prev, consumed: true } : prev)}
       />
 
-      {/* 🔥 UPDATE: Thêm component Modal Camera ở cuối */}
-      <CameraCaptureDialog
-        open={isCameraOpen}
+      {/* Modal Camera */}
+      <CameraCaptureDialog 
+        open={isCameraOpen} 
         onOpenChange={setIsCameraOpen}
         onCapture={handleCameraCapture}
       />

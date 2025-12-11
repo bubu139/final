@@ -13,7 +13,12 @@ interface Props {
   isSubmitted: boolean;
   userAnswer: any;
   onAnswerChange: (answer: any) => void;
+
+  // thêm 2 props mới:
+  correctAnswer?: any;
+  highlightMode?: "none" | "review";
 }
+
 
 // Type guards để kiểm tra loại câu hỏi
 const isMultipleChoiceQuestion = (question: QuestionType): question is MultipleChoiceQuestion => {
@@ -28,7 +33,16 @@ const isShortAnswerQuestion = (question: QuestionType): question is ShortAnswerQ
   return question.type === 'short-answer';
 };
 
-export function QuestionComponent({ question, questionNumber, isSubmitted, userAnswer, onAnswerChange }: Props) {
+export function QuestionComponent({
+  question,
+  questionNumber,
+  isSubmitted,
+  userAnswer,
+  onAnswerChange,
+  correctAnswer,
+  highlightMode = "none"
+}: Props) {
+
   // Tạo một bản sao để tránh type narrowing
   const currentQuestion = question;
 
@@ -55,32 +69,41 @@ export function QuestionComponent({ question, questionNumber, isSubmitted, userA
   // Sử dụng type guards để xác định loại câu hỏi
   if (isMultipleChoiceQuestion(currentQuestion)) {
     return <MultipleChoiceQuestionComponent 
-      question={currentQuestion} 
-      questionNumber={questionNumber}
-      isSubmitted={isSubmitted}
-      userAnswer={userAnswer}
-      onAnswerChange={onAnswerChange}
-    />;
+  question={currentQuestion} 
+  questionNumber={questionNumber}
+  isSubmitted={isSubmitted}
+  userAnswer={userAnswer}
+  correctAnswer={correctAnswer}
+  highlightMode={highlightMode}
+  onAnswerChange={onAnswerChange}
+/>;
+
   }
   
   if (isTrueFalseQuestion(currentQuestion)) {
     return <TrueFalseQuestionComponent
-      question={currentQuestion}
-      questionNumber={questionNumber}
-      isSubmitted={isSubmitted}
-      userAnswer={userAnswer}
-      onAnswerChange={onAnswerChange}
-    />;
+  question={currentQuestion}
+  questionNumber={questionNumber}
+  isSubmitted={isSubmitted}
+  userAnswer={userAnswer}
+  correctAnswer={correctAnswer}
+  highlightMode={highlightMode}
+  onAnswerChange={onAnswerChange}
+/>;
+
   }
   
   if (isShortAnswerQuestion(currentQuestion)) {
-    return <ShortAnswerQuestionComponent
-      question={currentQuestion}
-      questionNumber={questionNumber}
-      isSubmitted={isSubmitted}
-      userAnswer={userAnswer}
-      onAnswerChange={onAnswerChange}
-     />;
+   return <ShortAnswerQuestionComponent
+  question={currentQuestion}
+  questionNumber={questionNumber}
+  isSubmitted={isSubmitted}
+  userAnswer={userAnswer}
+  correctAnswer={correctAnswer}
+  highlightMode={highlightMode}
+  onAnswerChange={onAnswerChange}
+/>;
+
   }
 
   // Fallback cho unknown type - sử dụng type assertion để tránh lỗi

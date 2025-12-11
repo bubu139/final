@@ -1,10 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Avatar,
-  AvatarFallback,
-} from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +38,7 @@ import {
   Target,
   TrendingUp,
   UserRound,
+  MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -50,19 +48,20 @@ import {
   Cell,
   Pie,
   PieChart,
-  PolarAngleAxis,
-  PolarGrid,
   Radar,
   RadarChart,
+  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  ResponsiveContainer,
+  PolarGrid,
+  PolarAngleAxis,
 } from 'recharts';
 import { useUser } from '@/supabase/auth/use-user';
 import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import type { TestAnalysis, TestAttempt } from '@/types/test-history';
+import { Textarea } from '@/components/ui/textarea';
 
 const masteryConfig: ChartConfig = {
   advanced: { label: 'Nắm vững', color: 'hsl(var(--primary))' },
@@ -93,6 +92,13 @@ type TopicStat = {
   accuracy: number;
 };
 
+type AiAssessment = {
+  label: string;
+  tone: 'positive' | 'neutral' | 'warning';
+  summary: string;
+  bulletPoints: string[];
+};
+
 export default function UserPage() {
   const { user, isUserLoading } = useUser();
   const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
@@ -101,6 +107,16 @@ export default function UserPage() {
   const [analysis, setAnalysis] = useState<TestAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Mục tiêu học tập (FE-only)
+  const [goalInput, setGoalInput] = useState('');
+  const [confirmedGoal, setConfirmedGoal] = useState<string | null>(null);
+
+  const handleSaveGoal = () => {
+    const trimmed = goalInput.trim();
+    if (!trimmed) return;
+    setConfirmedGoal(trimmed);
+  };
 
   useEffect(() => {
     if (isUserLoading || !isInitialized) return;
@@ -225,12 +241,12 @@ export default function UserPage() {
       attempts.length === 0
         ? []
         : [...attempts]
-          .reverse()
-          .slice(0, 6)
-          .map((attempt) => ({
-            name: formatShortDate(attempt.completedAt),
-            score: Number(attempt.score.toFixed(1)),
-          })),
+            .reverse()
+            .slice(0, 6)
+            .map((attempt) => ({
+              name: formatShortDate(attempt.completedAt),
+              score: Number(attempt.score.toFixed(1)),
+            })),
     [attempts],
   );
 
@@ -261,6 +277,99 @@ export default function UserPage() {
   const averageScore = totalTests
     ? attempts.reduce((sum, attempt) => sum + attempt.score, 0) / totalTests
     : 0;
+
+  // Đánh giá điểm mạnh – yếu, khả năng cần cải thiện / phát huy
+  const aiAssessment: AiAssessment = useMemo(() => {
+    const strongCount = strengthTopics.length;
+    const practicingCount = practicingTopics.length;
+    const weakCount = knowledgeFocus.length;
+
+    const strongNames = strengthTopics.slice(0, 3).map((t) => t.topic);
+    const practicingNames = practicingTopics.slice(0, 3).map((t) => t.topic);
+    const weakNames = knowledgeFocus.slice(0, 3).map((t) => t.topic);
+
+    if (!totalTests) {
+      return {
+        label: 'Chưa đủ dữ liệu',
+        tone: 'neutral',
+        summary:
+          'Bạn chưa có bài kiểm tra nào trong hệ thống, nên AI chưa thể đánh giá rõ điểm mạnh – điểm yếu.',
+        bulletPoints: [
+          'Hãy làm ít nhất 1–2 bài kiểm tra để AI xây dựng bản đồ kỹ năng ban đầu.',
+          'Sau mỗi bài, mục “Đánh giá của AI” sẽ cập nhật tự động theo kết quả mới.',
+        ],
+      };
+    }
+
+    const avg = Number(averageScore.toFixed(1));
+    let label: AiAssessment['label'];
+    let tone: AiAssessment['tone'];
+    let summary: string;
+
+    if (strongCount > 0 && weakCount === 0) {
+      label = 'Điểm mạnh rõ ràng';
+      tone = 'positive';
+      summary = `Bạn đang có nền tảng khá vững, đặc biệt ở các chủ đề ${strongNames.join(
+        ', ',
+      ) || 'mạnh hiện tại'}. Hãy tiếp tục phát huy và tăng dần độ khó của bài luyện tập.`;
+    } else if (strongCount > 0 && weakCount > 0) {
+      label = 'Cân bằng nhưng cần cải thiện';
+      tone = avg >= 60 ? 'neutral' : 'warning';
+      summary = `Bạn đã có một số điểm mạnh như ${strongNames.join(
+        ', ',
+      ) || 'một vài chủ đề nắm vững'}, nhưng vẫn còn ${
+        weakCount
+      } nhóm kỹ năng cần ưu tiên cải thiện, điển hình là ${weakNames.join(
+        ', ',
+      ) || 'một số chủ đề màu đỏ trên bản đồ kỹ năng'}.`;
+    } else if (weakCount > 0) {
+      label = 'Cần tập trung xây nền';
+      tone = 'warning';
+      summary = `AI nhận thấy phần lớn kỹ năng đang ở mức cần ôn, đặc biệt là ${weakNames.join(
+        ', ',
+      ) || 'các chủ đề màu đỏ trên bản đồ kỹ năng'}. Bạn nên củng cố lại kiến thức nền trước khi luyện đề khó.`;
+    } else {
+      label = 'Đang hình thành bản đồ kỹ năng';
+      tone = 'neutral';
+      summary =
+        'Dữ liệu hiện tại chưa đủ rõ để phân loại điểm mạnh – yếu. Bạn cứ tiếp tục làm thêm đề, AI sẽ dần tinh chỉnh bản đồ kỹ năng cho bạn.';
+    }
+
+    const bulletPoints: string[] = [];
+
+    if (strongNames.length) {
+      bulletPoints.push(
+        `Khả năng nên phát huy: ${strongNames.join(
+          ', ',
+        )} – hãy duy trì luyện các dạng vận dụng và vận dụng cao ở những chủ đề này.`,
+      );
+    }
+
+    if (practicingNames.length) {
+      bulletPoints.push(
+        `Kỹ năng đang ở mức trung bình: ${practicingNames.join(
+          ', ',
+        )} – nên luyện thêm bài từ dễ đến trung bình khá để kéo độ chính xác lên ≥ 80%.`,
+      );
+    }
+
+    if (weakNames.length) {
+      bulletPoints.push(
+        `Kỹ năng cần cải thiện sớm: ${weakNames.join(
+          ', ',
+        )} – xem lại lý thuyết, chữa kỹ các câu sai và ưu tiên luyện lại những dạng bài hay nhầm.`,
+      );
+    }
+
+    if (!bulletPoints.length) {
+      bulletPoints.push(
+        'Tiếp tục duy trì nhịp độ làm bài đều đặn (mỗi ngày 30–45 phút). Khi dữ liệu đủ lớn, AI sẽ gợi ý chi tiết hơn từng kỹ năng.',
+      );
+    }
+
+    return { label, tone, summary, bulletPoints };
+  }, [strengthTopics, practicingTopics, knowledgeFocus, totalTests, averageScore]);
+
   const latestScore = attempts[0]?.score ?? 0;
   const totalTimeSpent = attempts.reduce((sum, attempt) => sum + attempt.timeSpent, 0);
 
@@ -268,7 +377,7 @@ export default function UserPage() {
   const initials = displayName
     .split(' ')
     .filter(Boolean)
-    .map((part) => part[0])
+    .map((part: string) => part[0])
     .join('')
     .slice(0, 2)
     .toUpperCase();
@@ -330,7 +439,9 @@ export default function UserPage() {
                   <UserRound className="text-primary" /> {displayName}
                 </CardTitle>
                 <CardDescription>
-                  {analysis?.totalAttempts ? `Đã hoàn thành ${analysis.totalAttempts} bài kiểm tra` : 'Hãy bắt đầu với một bài kiểm tra để AI hiểu rõ bạn hơn'}
+                  {analysis?.totalAttempts
+                    ? `Đã hoàn thành ${analysis.totalAttempts} bài kiểm tra`
+                    : 'Hãy bắt đầu với một bài kiểm tra để AI hiểu rõ bạn hơn'}
                 </CardDescription>
               </div>
               <Badge variant="secondary">
@@ -372,11 +483,12 @@ export default function UserPage() {
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="text-primary" /> Gợi ý tiếp theo
               </CardTitle>
-              <CardDescription>Dựa trên lịch sử bài kiểm tra gần nhất</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {knowledgeFocus.length === 0 ? (
-                <p className="text-muted-foreground">Hãy hoàn thành ít nhất một bài kiểm tra để nhận gợi ý học tập cá nhân hoá.</p>
+                <p className="text-muted-foreground">
+                  Hãy hoàn thành ít nhất một bài kiểm tra để nhận gợi ý học tập cá nhân hoá.
+                </p>
               ) : (
                 <div className="space-y-2">
                   {knowledgeFocus.slice(0, 3).map((topic) => (
@@ -406,7 +518,9 @@ export default function UserPage() {
             </CardHeader>
             <CardContent>
               {scoreTrendData.length === 0 ? (
-                <p className="text-muted-foreground text-center py-12">Chưa có dữ liệu điểm số. Hãy hoàn thành bài test đầu tiên nhé!</p>
+                <p className="text-muted-foreground text-center py-12">
+                  Chưa có dữ liệu điểm số. Hãy hoàn thành bài test đầu tiên nhé!
+                </p>
               ) : (
                 <ChartContainer
                   config={{ score: { label: 'Điểm', color: 'hsl(var(--primary))' } }}
@@ -441,7 +555,12 @@ export default function UserPage() {
                   <RadarChart data={radarData} outerRadius="80%">
                     <PolarGrid strokeOpacity={0.2} />
                     <PolarAngleAxis dataKey="skill" tick={{ fill: 'currentColor', fontSize: 12 }} />
-                    <Radar dataKey="score" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} />
+                    <Radar
+                      dataKey="score"
+                      stroke="hsl(var(--primary))"
+                      fill="hsl(var(--primary))"
+                      fillOpacity={0.3}
+                    />
                   </RadarChart>
                 </ResponsiveContainer>
               )}
@@ -461,7 +580,16 @@ export default function UserPage() {
               <ChartContainer config={masteryConfig} className="h-[240px]">
                 <PieChart>
                   <Tooltip contentStyle={{ borderRadius: 8 }} />
-                  <Pie data={masteryData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} label>
+                  <Pie
+                    data={masteryData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    label
+                  >
                     <Cell fill="var(--color-advanced)" />
                     <Cell fill="var(--color-practicing)" />
                     <Cell fill="var(--color-weak)" />
@@ -508,8 +636,12 @@ export default function UserPage() {
                           <TableCell className="font-medium">{attempt.testTitle}</TableCell>
                           <TableCell>{attempt.topic}</TableCell>
                           <TableCell className="text-muted-foreground">{attempt.difficulty}</TableCell>
-                          <TableCell className="text-right font-semibold">{attempt.score.toFixed(1)}</TableCell>
-                          <TableCell className="text-right text-muted-foreground">{formatDate(attempt.completedAt)}</TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {attempt.score.toFixed(1)}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {formatDate(attempt.completedAt)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -524,6 +656,117 @@ export default function UserPage() {
                 </Link>
               </Button>
             </CardFooter>
+          </Card>
+        </div>
+
+        {/* Mục tiêu học tập & Đánh giá của AI */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Khung 1: Mục tiêu học tập */}
+          <Card>
+            <CardHeader className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-5 h-5 text-primary" />
+                  <span>Mục tiêu học tập</span>
+                </CardTitle>
+                <Badge variant="outline" className="text-xs">
+                  FE-only • sẽ lưu backend sau
+                </Badge>
+              </div>
+              <CardDescription>
+                Viết ngắn gọn mục tiêu ôn luyện (điểm mong muốn, khối thi, chủ đề muốn tập trung...).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Textarea
+                value={goalInput}
+                onChange={(e) => setGoalInput(e.target.value)}
+                placeholder="Ví dụ: Đạt 8.0+ Toán THPTQG, làm chắc hàm số và tích phân trong 2 tháng tới..."
+                className="min-h-[110px] resize-none"
+              />
+
+              <div className="flex items-center justify-between gap-3">
+                <Button size="sm" onClick={handleSaveGoal}>
+                  Lưu mục tiêu
+                </Button>
+
+                {confirmedGoal && (
+                  <p className="flex items-center gap-1 text-xs text-emerald-600">
+                    <Sparkles className="w-4 h-4" />
+                    AI đã cập nhật mục tiêu của bạn.
+                  </p>
+                )}
+              </div>
+
+              {confirmedGoal && (
+                <div className="mt-1 rounded-lg border border-emerald-100 bg-emerald-50/70 p-3">
+                  <p className="text-[11px] font-semibold text-emerald-800 mb-1">Mục tiêu hiện tại</p>
+                  <p className="text-sm text-emerald-900 whitespace-pre-wrap">{confirmedGoal}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Khung 2: Đánh giá của AI */}
+          <Card>
+            <CardHeader className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-primary" />
+                  <span>Đánh giá của AI</span>
+                </CardTitle>
+                <Badge
+                  variant={
+                    aiAssessment.tone === 'positive'
+                      ? 'default'
+                      : aiAssessment.tone === 'warning'
+                      ? 'destructive'
+                      : 'outline'
+                  }
+                  className="text-xs"
+                >
+                  {aiAssessment.label}
+                </Badge>
+              </div>
+              <CardDescription>
+                Đánh giá tổng quan điểm mạnh – điểm yếu từ bản đồ kỹ năng và lịch sử điểm số. Khi bạn làm bài mới, phần
+                này sẽ tự động cập nhật.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-slate-800">{aiAssessment.summary}</p>
+
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="rounded-lg bg-slate-50 border border-slate-100 p-2">
+                  <p className="text-[11px] text-muted-foreground mb-1">Điểm trung bình</p>
+                  <p className="text-base font-semibold">
+                    {averageScore.toFixed(1)}
+                    <span className="text-[11px] text-muted-foreground"> / 100</span>
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-50 border border-slate-100 p-2">
+                  <p className="text-[11px] text-muted-foreground mb-1">Số bài kiểm tra</p>
+                  <p className="text-base font-semibold">{totalTests}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 border border-slate-100 p-2">
+                  <p className="text-[11px] text-muted-foreground mb-1">Kỹ năng cần ôn</p>
+                  <p className="text-base font-semibold">
+                    {masteryData.find((m) => m.name === 'Cần ôn')?.value ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  Điểm mạnh & cần cải thiện
+                </p>
+                <ul className="space-y-1.5 text-sm text-slate-700 list-disc list-inside">
+                  {aiAssessment.bulletPoints.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </CardContent>
           </Card>
         </div>
       </div>

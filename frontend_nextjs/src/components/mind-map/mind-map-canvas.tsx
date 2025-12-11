@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { NodeProgress } from "@/lib/nodeProgressApi";
@@ -7,29 +6,34 @@ import type { MindMapNode, MindMapNodeWithState, NodePosition, Edge } from '@/ty
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MindMapNode as MindMapNodeComponent } from './mind-map-node';
 
+// ---- FIX: Định nghĩa type mở rộng để TypeScript không báo lỗi max_score ----
+type NodeProgressWithMaxScore = NodeProgress & {
+  max_score?: number;
+};
+// ---- END FIX ----
+
 type MindMapCanvasProps = {
   data: MindMapNode;
-  progress: Record<string, NodeProgress>;  // <--- SỬA Ở ĐÂY
+  progress: Record<string, NodeProgressWithMaxScore>; // Sử dụng type mở rộng ở đây
   selectedNodeId: string | null;
   onNodeClick: (node: MindMapNode) => void;
 };
 
+// ---- FIX: Cập nhật logic màu sắc chuẩn theo thang điểm 100 ----
+const getStatusColor = (p?: NodeProgressWithMaxScore) => {
+  if (!p) return "#2196F3"; // Mặc định: Xanh dương (Chưa học)
 
+  // Ưu tiên lấy max_score (điểm cao nhất), nếu không có thì lấy score
+  const currentScore = p.max_score ?? p.score ?? 0;
 
-// ---- ADD: màu trạng thái node ----
-const getStatusColor = (p?: NodeProgress) => {
-  if (!p) return "#2196F3";           // chưa học
+  // Logic màu dựa trên thang điểm 100
+  if (currentScore >= 80) return "#4CAF50"; // Xanh lá (Thành thạo)
+  if (currentScore >= 50) return "#FFC107"; // Vàng (Đang học/Khá)
+  if (currentScore > 0) return "#FF9800";   // Cam (Mới bắt đầu/Điểm thấp)
 
-  if (p.score !== null && p.score >= 80) return "#4CAF50";  // xanh lá (mastered)
-  if (p.status === "learning") return "#FFC107";  // vàng
-
-  return "#2196F3";
+  return "#2196F3"; // Xanh dương (Chưa có điểm)
 };
-
-
-
-// ---- END ADD ----
-
+// ---- END FIX ----
 
 // Helper to initialize nodes with state from the raw data
 const initializeNodes = (node: MindMapNode): Map<string, MindMapNodeWithState> => {
@@ -344,22 +348,27 @@ export function MindMapCanvas({
             })}
           </g>
         </svg>
-        {visibleNodes.map(node => (
-          <MindMapNodeComponent
-            key={node.id}
-            node={node}
-            position={positions.get(node.id)}
-            onToggle={handleToggleNode}
-            onDragStart={handleNodeDragStart}
-            onClick={() => onNodeClick(node)}  // chỉ báo sự kiện
-            color={getStatusColor(progress[node.id])}
-            score={progress[node.id]?.score}
-            isSelected={selectedNodeId === node.id}
-          />
-        ))}
+        {visibleNodes.map(node => {
+          // ---- FIX: Lấy dữ liệu điểm số chính xác ----
+          const nodeProgress = progress[node.id];
+          const displayScore = nodeProgress?.max_score ?? nodeProgress?.score;
+          // ---- END FIX ----
+
+          return (
+            <MindMapNodeComponent
+              key={node.id}
+              node={node}
+              position={positions.get(node.id)}
+              onToggle={handleToggleNode}
+              onDragStart={handleNodeDragStart}
+              onClick={() => onNodeClick(node)}
+              color={getStatusColor(nodeProgress)} 
+              score={displayScore} 
+              isSelected={selectedNodeId === node.id}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
-
-

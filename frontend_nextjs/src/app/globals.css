@@ -92,3 +92,10 @@
     background-repeat: no-repeat;
   }
 }
+@layer components {
+  /* Ẩn nút toggle bàn phím ảo của MathLive trong mọi math-field */
+  math-field::part(virtual-keyboard-toggle) {
+    display: none !important;
+  }
+}
+  

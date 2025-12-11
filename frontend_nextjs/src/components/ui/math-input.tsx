@@ -1,16 +1,27 @@
 'use client';
-import React, { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 
-// Import MathLive
+import React, {
+  useEffect,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  useState,
+} from 'react';
+
+// Import MathLive để đăng ký <math-field>
 import 'mathlive';
 import { MathfieldElement } from 'mathlive';
 
-// Khai báo Types cho TypeScript nhận diện thẻ <math-field>
+// Khai báo type cho thẻ <math-field> để TSX không báo lỗi
 declare global {
   namespace JSX {
     interface IntrinsicElements {
-      'math-field': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        'math-virtual-keyboard-policy'?: string; // Cập nhật tên attribute mới
+      'math-field': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      > & {
+        // Thuộc tính điều khiển chế độ bàn phím ảo
+        'math-virtual-keyboard-policy'?: 'auto' | 'manual' | 'sandboxed';
       };
     }
   }
@@ -24,44 +35,37 @@ interface MathInputProps {
   className?: string;
 }
 
+/**
+ * MathInput:
+ * - Giữ lại MathLive cho nhập LaTeX.
+ * - TẮT bàn phím ảo tự bật + tránh lỗi cross-origin bằng policy "sandboxed".
+ * - Placeholder custom giống input thường.
+ */
 export const MathInput = forwardRef<MathfieldElement, MathInputProps>(
   ({ value, onChange, onEnter, placeholder, className }, ref) => {
-    // Khai báo ref nội bộ là mfRef
-    const mfRef = useRef<MathfieldElement>(null);
-    
-    // State này để đảm bảo component chỉ render math-field khi đã mount trên client
+    const mfRef = useRef<MathfieldElement | null>(null);
     const [isMounted, setIsMounted] = useState(false);
 
+    // Cho phép parent lấy trực tiếp ref tới <math-field>
     useImperativeHandle(ref, () => mfRef.current as MathfieldElement);
 
     useEffect(() => {
       setIsMounted(true);
     }, []);
 
+    // Lắng nghe input + Enter
     useEffect(() => {
-      // Lấy current từ mfRef (chứ không phải mathFieldRef)
+      if (!isMounted) return;
       const mf = mfRef.current;
       if (!mf) return;
 
-      // --- CẤU HÌNH MATHFIELD ---
-      mf.smartMode = true; 
-      
-      // SỬA LỖI Ở ĐÂY: Dùng đúng biến 'mf' và đúng thuộc tính mới
-      mf.mathVirtualKeyboardPolicy = "manual"; 
-      
-      // Tắt menu ngữ cảnh mặc định
-      mf.menuItems = []; 
-
-      // Xử lý sự kiện thay đổi dữ liệu
-      const handleInput = (evt: Event) => {
-        const target = evt.target as MathfieldElement;
-        onChange(target.value);
+      const handleInput = () => {
+        onChange(mf.value ?? '');
       };
 
-      // Xử lý phím Enter
-      const handleKeyDown = (evt: KeyboardEvent) => {
-        if (evt.key === 'Enter' && !evt.shiftKey) {
-          evt.preventDefault();
+      const handleKeyDown = (ev: KeyboardEvent) => {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+          ev.preventDefault();
           onEnter();
         }
       };
@@ -75,46 +79,51 @@ export const MathInput = forwardRef<MathfieldElement, MathInputProps>(
       };
     }, [isMounted, onChange, onEnter]);
 
-    // Đồng bộ giá trị từ ngoài vào (Controlled Input)
+    // Đồng bộ value từ ngoài vào MathLive
     useEffect(() => {
+      if (!isMounted) return;
       const mf = mfRef.current;
       if (mf && mf.value !== value) {
         mf.value = value;
       }
     }, [value, isMounted]);
 
+    // Khi chưa mount thì render khung trống để tránh lỗi SSR
     if (!isMounted) {
-      return <div className={className} style={{ minHeight: '50px' }} />;
+      return <div className={className} style={{ minHeight: '48px' }} />;
     }
 
     return (
-      <div className={`${className || ''} relative`}>
+      <div className={`relative ${className ?? ''}`}>
         <math-field
           ref={mfRef}
+          // 🔴 Quan trọng: KHÔNG cho virtual keyboard tự bật + chạy trong iframe hiện tại
+          math-virtual-keyboard-policy="sandboxed"
           style={{
             width: '100%',
             padding: '10px 12px',
-            borderRadius: '12px',
+            borderRadius: '16px',
             border: 'none',
             background: 'transparent',
             outline: 'none',
-            fontSize: '1.1rem',
-            fontFamily: 'KaTeX_Main, "Times New Roman", serif',
-            color: '#334155', // slate-700
+            fontSize: '1rem',
+            fontFamily:
+              'KaTeX_Main, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            color: '#0f172a',
           }}
         >
           {value}
         </math-field>
 
-        {/* Placeholder: Chỉ hiện khi không có giá trị */}
-        {!value && (
-          <div className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400 pointer-events-none text-sm select-none font-sans">
+        {/* Placeholder giống input thường, chỉ hiện khi chưa nhập gì */}
+        {!value && placeholder && (
+          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400 font-sans">
             {placeholder}
           </div>
         )}
       </div>
     );
-  }
+  },
 );
 
 MathInput.displayName = 'MathInput';
