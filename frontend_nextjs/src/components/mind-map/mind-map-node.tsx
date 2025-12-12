@@ -15,9 +15,9 @@ export type MindMapNodeProps = {
   onDragStart: (nodeId: string) => void;
   onClick: (node: MindMapNode) => void;
 
-  color?: string;
+  color?: string; // Nhận màu từ cha (Canvas)
   isSelected?: boolean;
-  score?: number | null; // Add score prop
+  score?: number | null; // Nhận điểm từ cha
 };
 
 export function MindMapNode({
@@ -27,12 +27,13 @@ export function MindMapNode({
   onDragStart,
   onClick,
   isSelected = false,
-  color = "#2196F3",
+  color = "#2196F3", // Màu mặc định nếu không truyền vào là Xanh Dương
   score,
 }: MindMapNodeProps) {
 
   if (!position) return null;
 
+  // Sử dụng màu được truyền vào (đã được tính toán logic ở cha)
   const nodeColor = color;
   const accentColor = isSelected ? "#ff9800" : nodeColor;
 
