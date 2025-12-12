@@ -755,7 +755,6 @@ export default function UserPage() {
                   </p>
                 </div>
               </div>
-
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                   Điểm mạnh & cần cải thiện

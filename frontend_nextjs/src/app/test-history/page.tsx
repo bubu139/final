@@ -6,7 +6,13 @@ import { useUser } from '@/supabase/auth/use-user';
 import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import type { TestAttempt, TestAnalysis } from '@/types/test-history';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,13 +30,18 @@ import { useRouter } from 'next/navigation';
 
 export default function TestHistoryPage() {
   const { user, isUserLoading } = useUser();
-  const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
+  const {
+    client: supabase,
+    isInitialized,
+    error: supabaseError
+  } = useSupabase();
   const router = useRouter();
 
   const [attempts, setAttempts] = useState<TestAttempt[]>([]);
   const [analysis, setAnalysis] = useState<TestAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingAll, setIsLoadingAll] = useState(false); // loading cho nút "Xem tất cả"
 
   useEffect(() => {
     if (isUserLoading || !isInitialized) return;
@@ -57,7 +68,7 @@ export default function TestHistoryPage() {
       try {
         const historyService = new TestHistoryService(supabase);
 
-        // Load attempts
+        // Load attempts (mặc định 20 bài gần nhất)
         const userAttempts = await historyService.getUserAttempts(user.id, 20);
         setAttempts(userAttempts);
 
@@ -73,7 +84,7 @@ export default function TestHistoryPage() {
       }
     };
 
-    loadData();
+    void loadData();
   }, [user, isUserLoading, isInitialized, supabase, supabaseError, router]);
 
   const getScoreColor = (score: number) => {
@@ -89,7 +100,7 @@ export default function TestHistoryPage() {
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit',
+      minute: '2-digit'
     }).format(date);
   };
 
@@ -97,6 +108,24 @@ export default function TestHistoryPage() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Hàm cho nút "Xem tất cả" – load gần như full lịch sử
+  const handleLoadAllAttempts = async () => {
+    if (!user || !supabase) return;
+
+    try {
+      setIsLoadingAll(true);
+      const historyService = new TestHistoryService(supabase);
+      // lấy tối đa 1000 bài – coi như "tất cả"
+      const allAttempts = await historyService.getUserAttempts(user.id, 1000);
+      setAttempts(allAttempts);
+    } catch (error) {
+      console.error('Error loading full test history:', error);
+      setLoadError('Không thể tải đầy đủ lịch sử làm bài. Vui lòng thử lại sau.');
+    } finally {
+      setIsLoadingAll(false);
+    }
   };
 
   if (isUserLoading || !isInitialized || isLoading) {
@@ -111,7 +140,7 @@ export default function TestHistoryPage() {
   }
 
   if (!user) {
-    return null; // Will redirect
+    return null; // sẽ redirect ở useEffect
   }
 
   return (
@@ -144,7 +173,9 @@ export default function TestHistoryPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{analysis.totalAttempts}</span>
+                  <span className="text-3xl font-bold">
+                    {analysis.totalAttempts}
+                  </span>
                   <BarChart3 className="w-5 h-5 text-muted-foreground" />
                 </div>
               </CardContent>
@@ -158,7 +189,9 @@ export default function TestHistoryPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{analysis.averageScore.toFixed(1)}</span>
+                  <span className="text-3xl font-bold">
+                    {analysis.averageScore.toFixed(1)}
+                  </span>
                   <Award className="w-5 h-5 text-yellow-500" />
                 </div>
               </CardContent>
@@ -172,12 +205,23 @@ export default function TestHistoryPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-3xl font-bold ${analysis.improvementRate >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                    {analysis.improvementRate >= 0 ? '+' : ''}{analysis.improvementRate.toFixed(1)}%
+                  <span
+                    className={`text-3xl font-bold ${
+                      analysis.improvementRate >= 0
+                        ? 'text-green-600'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {analysis.improvementRate >= 0 ? '+' : ''}
+                    {analysis.improvementRate.toFixed(1)}%
                   </span>
-                  <TrendingUp className={`w-5 h-5 ${analysis.improvementRate >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`} />
+                  <TrendingUp
+                    className={`w-5 h-5 ${
+                      analysis.improvementRate >= 0
+                        ? 'text-green-500'
+                        : 'text-red-500'
+                    }`}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -190,7 +234,9 @@ export default function TestHistoryPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{analysis.weakTopics.length}</span>
+                  <span className="text-3xl font-bold">
+                    {analysis.weakTopics.length}
+                  </span>
                   <Target className="w-5 h-5 text-orange-500" />
                 </div>
               </CardContent>
@@ -213,21 +259,33 @@ export default function TestHistoryPage() {
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4">
                 {analysis.weakTopics.map((topic, idx) => (
-                  <div key={idx} className="p-4 bg-white rounded-lg space-y-2">
+                  <div
+                    key={idx}
+                    className="p-4 bg-white rounded-lg space-y-2"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{topic.topic}</span>
-                      <Badge className={`${topic.accuracy >= 80 ? 'bg-green-100 text-green-700 hover:bg-green-200' :
-                          topic.accuracy >= 50 ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' :
-                            'bg-red-100 text-red-700 hover:bg-red-200'
-                        }`}>
+                      <Badge
+                        className={`${
+                          topic.accuracy >= 80
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : topic.accuracy >= 50
+                            ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                      >
                         {topic.accuracy.toFixed(0)}%
                       </Badge>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full ${topic.accuracy >= 80 ? 'bg-green-500' :
-                            topic.accuracy >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}
+                        className={`h-2 rounded-full ${
+                          topic.accuracy >= 80
+                            ? 'bg-green-500'
+                            : topic.accuracy >= 50
+                            ? 'bg-yellow-500'
+                            : 'bg-red-500'
+                        }`}
                         style={{ width: `${topic.accuracy}%` }}
                       />
                     </div>
@@ -249,11 +307,25 @@ export default function TestHistoryPage() {
           </Card>
         )}
 
-        {/* Test History List */}
+                {/* Test History List */}
         <div className="space-y-4">
-          <h2 className="text-2xl font-semibold">Lịch sử các bài làm</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-2xl font-semibold">Lịch sử các bài làm</h2>
+
+            {attempts.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-3"
+                onClick={() => router.push('/test-history/all')}
+              >
+                Xem tất cả
+              </Button>
+            )}
+          </div>
 
           {attempts.length === 0 ? (
+
             <Card>
               <CardContent className="p-12 text-center">
                 <BarChart3 className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
@@ -272,14 +344,19 @@ export default function TestHistoryPage() {
           ) : (
             <div className="space-y-3">
               {attempts.map((attempt) => (
-                <Card key={attempt.id} className="hover:shadow-lg transition-shadow">
+                <Card
+                  key={attempt.id}
+                  className="hover:shadow-lg transition-shadow"
+                >
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between gap-4">
                       {/* Left: Test Info */}
                       <div className="flex-1 space-y-2">
                         <div className="flex items-start justify-between">
                           <div>
-                            <h3 className="font-semibold text-lg">{attempt.testTitle}</h3>
+                            <h3 className="font-semibold text-lg">
+                              {attempt.testTitle}
+                            </h3>
                             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-4 h-4" />
@@ -293,7 +370,11 @@ export default function TestHistoryPage() {
                           </div>
 
                           {/* Score Badge */}
-                          <Badge className={`text-lg px-4 py-2 ${getScoreColor(attempt.score)}`}>
+                          <Badge
+                            className={`text-lg px-4 py-2 ${getScoreColor(
+                              attempt.score
+                            )}`}
+                          >
                             {attempt.score.toFixed(1)}
                           </Badge>
                         </div>
@@ -301,10 +382,21 @@ export default function TestHistoryPage() {
                         {/* Mini Stats */}
                         <div className="flex gap-6 text-sm">
                           <span className="text-muted-foreground">
-                            <strong>{attempt.correctAnswers}/{attempt.totalQuestions}</strong> câu đúng
+                            <strong>
+                              {attempt.correctAnswers}/{attempt.totalQuestions}
+                            </strong>{' '}
+                            câu đúng
                           </span>
                           <span className="text-muted-foreground">
-                            Độ chính xác: <strong>{((attempt.correctAnswers / attempt.totalQuestions) * 100).toFixed(0)}%</strong>
+                            Độ chính xác:{' '}
+                            <strong>
+                              {(
+                                (attempt.correctAnswers /
+                                  attempt.totalQuestions) *
+                                100
+                              ).toFixed(0)}
+                              %
+                            </strong>
                           </span>
                         </div>
                       </div>
@@ -312,7 +404,9 @@ export default function TestHistoryPage() {
                       {/* Right: Actions */}
                       <Button
                         variant="outline"
-                        onClick={() => router.push(`/test-result/${attempt.id}`)}
+                        onClick={() =>
+                          router.push(`/test-result/${attempt.id}`)
+                        }
                       >
                         Xem chi tiết
                         <ArrowRight className="w-4 h-4 ml-2" />
