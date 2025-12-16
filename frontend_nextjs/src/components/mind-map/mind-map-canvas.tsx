@@ -1,14 +1,53 @@
 "use client";
 
 import type { NodeProgress } from "@/lib/nodeProgressApi";
-
+import { useUser } from "@/supabase/auth/use-user";
 import type { MindMapNode, MindMapNodeWithState, NodePosition, Edge } from '@/types/mindmap';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MindMapNode as MindMapNodeComponent } from './mind-map-node';
-
 type NodeProgressWithMaxScore = NodeProgress & {
   max_score?: number;
 };
+// 🎭 DEMO OVERRIDE – CHỈ DÙNG KHI THUYẾT TRÌNH
+const DEMO_EMAIL = "hgtgd1903@gmail.com";
+
+const DEMO_PROGRESS: Record<string, NodeProgressWithMaxScore> = {
+  "dao-ham-cap-cao": {
+    status: "mastered",
+    score: 100,
+    max_score: 100, 
+    passed: true,
+  },
+
+  "cuc-tri": {
+    status: "learning",
+    score: 10,
+    max_score: 10,
+    passed: false,
+  },
+
+  "tich-phan": {
+    status: "mastered",
+    score: 100,
+    max_score: 100,
+    passed: true,
+  },
+
+  "gtln-gtnn": {
+    status: "mastered",
+    score: 88,
+    max_score: 88,
+    passed: true,
+  },
+
+  "tinh-don-dieu": {
+    status: "mastered",
+    score: 88,
+    max_score: 88,
+    passed: true,
+  },
+};
+
 
 type MindMapCanvasProps = {
   data: MindMapNode;
@@ -70,6 +109,22 @@ export function MindMapCanvas({
   const [isPanning, setIsPanning] = useState(false);
   const [viewTransform, setViewTransform] = useState({ scale: 1, x: 0, y: 0 });
 
+  
+const { user } = useUser();
+
+const patchedProgress = React.useMemo<Record<string, NodeProgressWithMaxScore>>(() => {
+  // ❌ user khác: trả dữ liệu thật
+  if (user?.email !== DEMO_EMAIL) return progress;
+
+  // ✅ chỉ user demo mới được merge điểm fake
+  return {
+    ...progress,
+    ...DEMO_PROGRESS,
+  };
+}, [progress, user?.email]);
+
+
+
   useEffect(() => {
     setNodes(initializeNodes(data));
   }, [data]);
@@ -85,6 +140,7 @@ export function MindMapCanvas({
       resizeObserver.observe(canvasRef.current);
       return () => resizeObserver.disconnect();
     }
+    
   }, []);
 
   const calculateLayout = useCallback(() => {
@@ -233,10 +289,12 @@ export function MindMapCanvas({
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left - viewTransform.x) / viewTransform.scale;
     const y = (e.clientY - rect.top - viewTransform.y) / viewTransform.scale;
+    setPositions(prev => {
+  const next = new Map(prev);
+  next.set(draggingNode, { x, y });
+  return next;
+});
 
-useEffect(() => {
-  updateEdges(positions);
-}, [positions, updateEdges]);
   }, [draggingNode, viewTransform, updateEdges]);
 
   const handleDragEnd = useCallback(() => {
@@ -286,6 +344,9 @@ useEffect(() => {
       handleDrag(e);
     }
   };
+useEffect(() => {
+  updateEdges(positions);
+}, [positions, updateEdges]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -349,8 +410,11 @@ useEffect(() => {
           </g>
         </svg>
         {visibleNodes.map(node => {
-          const nodeProgress = progress[node.id];
+          const nodeProgress = patchedProgress[node.id];
+
           const displayScore = nodeProgress?.max_score ?? nodeProgress?.score;
+
+
 
           return (
             <MindMapNodeComponent

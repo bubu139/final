@@ -42,6 +42,12 @@ interface LearningPathItemProps {
   progress: Record<string, NodeProgress>;
   onNodeClick: (node: MindMapNode) => void;
 }
+const DEMO_EMAIL = "hgtgd1903@gmail.com";
+const DEMO_COMPLETED_CHAPTERS: Record<string, number> = {
+  "khao-sat-ham-so": 3,
+  "nguyen-ham-tich-phan": 1,
+};
+const DEMO_CHAPTERS = ["khao-sat-ham-so", "nguyen-ham-tich-phan"];
 
 // --- 2. COMPONENT ĐỆ QUY HIỂN THỊ CÂY THƯ MỤC ---
 const LearningPathItem = ({
@@ -142,7 +148,7 @@ const LearningPathItem = ({
 export default function MindmapPage() {
   const { user } = useUser();
   const userId = user?.id || "";
-
+const isDemoUser = user?.email === DEMO_EMAIL;
   const [viewMode, setViewMode] = useState<'mindmap' | 'path'>('mindmap');
   const [selectedChapter, setSelectedChapter] = useState<MindMapNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<MindMapNode | null>(null);
@@ -280,11 +286,23 @@ export default function MindmapPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                         {subject.children?.map((chapter: MindMapNode) => {
                                             const totalNodes = chapter.children?.length || 0;
-                                            const completedNodes = chapter.children?.filter((c: MindMapNode) => {
-                                              const p = progress[c.id];
-                                              const score = p?.max_score ?? p?.score ?? 0;
-                                              return score >= 80;
-                                            }).length || 0;
+// kiểm tra chapter có phải là chapter demo không
+const isDemoChapter = DEMO_CHAPTERS.includes(chapter.id);
+
+// số hoàn thành thực tế từ progress
+const realCompleted = chapter.children?.filter((c: MindMapNode) => {
+  const p = progress[c.id];
+  const score = p?.max_score ?? p?.score ?? 0;
+  return score >= 80;
+}).length ?? 0;
+
+// hiển thị số hoàn thành: nếu là user demo và chapter demo → hiển thị số demo
+const displayCompleted = isDemoChapter && isDemoUser
+  ? DEMO_COMPLETED_CHAPTERS[chapter.id]   // chỉ user demo thấy 3/7 hoặc 1/3
+  : realCompleted;
+
+
+
                                             
                                             return (
                                                 <Card key={chapter.id} className="cursor-pointer hover:shadow-lg transition-all group border-slate-200 hover:border-blue-400" onClick={() => setSelectedChapter(chapter)}>
@@ -295,7 +313,8 @@ export default function MindmapPage() {
                                                     <CardContent>
                                                         <div className="flex items-center justify-between text-sm text-slate-500 bg-slate-50 p-2 rounded-md">
                                                             <div className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-green-500" /><span>Hoàn thành:</span></div>
-                                                            <span className="font-semibold text-slate-700">{completedNodes} / {totalNodes}</span>
+                                                            <span className="font-semibold text-slate-700">{displayCompleted} / {totalNodes}</span>
+
                                                         </div>
                                                     </CardContent>
                                                 </Card>

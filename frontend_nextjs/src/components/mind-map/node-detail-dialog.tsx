@@ -19,18 +19,68 @@ type NodeDetailDialogProps = {
   onClose: () => void;
   currentProgress?: NodeProgress;
 };
+const DEFAULT_NODE_PROGRESS: Record<string, NodeProgress> = {
+  "dao-ham-cap-cao": {
+    status: "mastered",
+    score: 100,
+    max_score: 100,
+    passed: true,
+  },
+    "cuc-tri": {
+    status: "learning",
+    score: 10,
+    max_score: 10,
+    passed: false,
+  },
+  "tich-phan": {
+    status: "mastered",
+    score: 100,
+    max_score: 100,
+    passed: true,
+  },
+  "gtln-gtnn": {
+    status: "mastered",
+    score: 88,
+    max_score: 88,
+    passed: true,
+  },
+
+  "tinh-don-dieu": {
+    status: "mastered",
+    score: 88,
+    max_score: 88,
+    passed: true,
+  },
+};
 
 export function NodeDetailDialog({ node, isOpen, onClose, currentProgress }: NodeDetailDialogProps) {
   const { user } = useUser();
   const userId = user?.id;
 
   // ✅ LOGIC MỚI: Chỉ có 2 trạng thái màu
-  const rawScore = Math.round(currentProgress?.max_score ?? currentProgress?.score ?? 0);
+const isDemoUser = user?.email === "hgtgd1903@gmail.com";
 
-  let colorClass = "text-yellow-700 bg-yellow-100 border-yellow-300"; // Mặc định: Vàng
-  if (rawScore >= 80) {
-    colorClass = "text-green-700 bg-green-100 border-green-300"; // Xanh Lá (Mastered)
-  }
+const effectiveProgress =
+  currentProgress ??
+  (isDemoUser ? DEFAULT_NODE_PROGRESS[node.id] : undefined) ??
+  {
+    status: "learning",
+    score: 0,
+    max_score: 100,
+    passed: false,
+  };
+
+
+const score = effectiveProgress.score;
+const maxScore =100;
+
+
+const isPassed = typeof score === "number" && score >= 80;
+
+const colorClass = isPassed
+  ? "text-green-700 bg-green-100 border-green-300"
+  : "text-yellow-700 bg-yellow-100 border-yellow-300";
+
 
   const [summary, setSummary] = useState('');
   const [exercises, setExercises] = useState('');
@@ -94,10 +144,13 @@ export function NodeDetailDialog({ node, isOpen, onClose, currentProgress }: Nod
           </DialogTitle>
 
           <div className="mt-2 text-sm">
-            <span className="font-semibold">Trạng thái: </span>
             <span className={`font-bold px-2 py-1 rounded-lg border ${colorClass}`}>
-              {rawScore >= 80 ? `✅ Đã thành thạo (${rawScore}%)` : `📚 Đang học (${rawScore}%)`}
-            </span>
+  {isPassed
+    ? `✅ Đã thành thạo (${score} / ${maxScore} điểm)`
+    : `📚 Đang học (${score} / ${maxScore} điểm)`}
+</span>
+
+
           </div>
         </DialogHeader>
 
