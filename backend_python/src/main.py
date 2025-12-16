@@ -3,31 +3,27 @@ import re
 import uvicorn
 import json
 import os
-import time
-from functools import lru_cache
+import hashlib 
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException
 from src.routes.node_progress import router as node_progress_router
-from src.routes.video import router as video_router
-from src.db import init_db
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import List, Literal, Optional
+import PyPDF2
+from docx import Document
 from src.models import NodeProgress
 from src.supabase_client import supabase
-from src.utils.file_utils import extract_text_from_file
 
 # Import config
 from src.ai_config import genai
 from src.ai_flows.chat_flow import chat as chat_flow
 from src.ai_schemas.chat_schema import ChatInputSchema
 from src.services import rag_service
-from src.services import audio_service
-import aiofiles
+from src.routes import student_profile
 
+app = FastAPI(title="Math Tutor API")
 
-app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,12 +35,47 @@ app.add_middleware(
 
 # Thêm router node progress
 app.include_router(node_progress_router)
-app.include_router(video_router)
+app.include_router(student_profile.router)
 
+# ===== DOCUMENT PROCESSING =====
 
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Extract text from a PDF file"""
+    try:
+        with open(pdf_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        print(f"Error reading PDF {pdf_path}: {e}")
+        return ""
+
+def extract_text_from_word(docx_path: str) -> str:
+    """Extract text from a Word (.docx) file"""
+    try:
+        doc = Document(docx_path)
+        text = ""
+        for paragraph in doc.paragraphs:
+            text += paragraph.text + "\n"
+        return text
+    except Exception as e:
+        print(f"Error reading Word file {docx_path}: {e}")
+        return ""
+
+def extract_text_from_file(file_path: str) -> str:
+    """Extract text from PDF or Word file based on extension"""
+    file_path_obj = Path(file_path)
+    extension = file_path_obj.suffix.lower()
+    
+    if extension == '.pdf':
+        return extract_text_from_pdf(file_path)
+    elif extension in ['.docx', '.doc']:
+        return extract_text_from_word(file_path)
+    else:
+        print(f"Unsupported file format: {extension}")
+        return ""
 
 def load_reference_materials(folder_path: str, max_files: int = 5) -> str:
     """Load and combine text from multiple PDF/Word files in a folder"""
@@ -70,31 +101,26 @@ def load_reference_materials(folder_path: str, max_files: int = 5) -> str:
         text = extract_text_from_file(str(file))
         if text:
             combined_text += f"\n\n=== TÀI LIỆU: {file.name} ===\n{text}\n"
-
+    
     return combined_text
 
-
-@lru_cache(maxsize=32)
-def load_reference_materials_cached(folder_path: str, max_files: int = 5) -> str:
-    """Cached wrapper for reference material loading."""
-    return load_reference_materials(folder_path, max_files)
-
-
-# ===== IN-MEMORY CACHES =====
-_EXERCISE_CACHE: Dict[str, Tuple[float, Any]] = {}
-_TEST_CACHE: Dict[str, Tuple[float, Any]] = {}
+# ===== PATHS CONFIGURATION =====
 
 # ===== PATHS CONFIGURATION =====
 
 BASE_DIR = Path(__file__).parent.parent
 EXERCISES_FOLDER = BASE_DIR / "reference_materials" / "exercises"
 TESTS_FOLDER = BASE_DIR / "reference_materials" / "tests"
+GENERATED_TESTS_FOLDER = BASE_DIR / "generated_tests"  # ✅ thư mục cache đề thi
 
-EXERCISES_FOLDER.mkdir(parents=True, exist_ok=True)
-TESTS_FOLDER.mkdir(parents=True, exist_ok=True)
+# Tạo thư mục nếu chưa có
+for folder in [EXERCISES_FOLDER, TESTS_FOLDER, GENERATED_TESTS_FOLDER]:
+    folder.mkdir(parents=True, exist_ok=True)
 
 print(f"📁 Exercises folder: {EXERCISES_FOLDER}")
 print(f"📁 Tests folder: {TESTS_FOLDER}")
+print(f"📁 Generated tests folder: {GENERATED_TESTS_FOLDER}")
+
 
 # ===== SYSTEM INSTRUCTIONS =====
 
@@ -274,34 +300,6 @@ YÊU CẦU:
 4. Luôn trả về JSON hợp lệ (không markdown, không giải thích ngoài).
 """
 
-
-@lru_cache(maxsize=1)
-def _chat_system_prompt() -> str:
-    """Combine system instruction + blueprint once to reduce repeated prompt tokens."""
-    return f"{CHAT_SYSTEM_INSTRUCTION}\n\n{CHAT_RESPONSE_BLUEPRINT}"
-
-
-@lru_cache(maxsize=1)
-def _chat_generation_config() -> Dict[str, Any]:
-    """Return cached generation config for chat requests."""
-    return {
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 8192,
-        "response_mime_type": "application/json",
-    }
-
-
-@lru_cache(maxsize=1)
-def _chat_model() -> genai.GenerativeModel:
-    """Cached Gemini model so the prompt is only sent once per process."""
-    return genai.GenerativeModel(
-        "gemini-2.5-flash",
-        generation_config=_chat_generation_config(),
-        system_instruction=_chat_system_prompt(),
-    )
-
 GEOGEBRA_SYSTEM_INSTRUCTION = """Bạn là một chuyên gia GeoGebra, chuyên chuyển đổi mô tả bằng ngôn ngữ tự nhiên thành các lệnh GeoGebra hợp lệ.
 
 🎯 NHIỆM VỤ:
@@ -363,15 +361,7 @@ SUMMARIZE_SYSTEM_INSTRUCTION = """Bạn là một giảng viên toán học chuy
 
 # ===== FASTAPI APP =====
 
-app = FastAPI(title="Math Tutor API")
-app.include_router(node_progress_router)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 def extract_reply_only(raw_text: str) -> str:
     """
     Lấy phần nội dung trong key "reply": " ... " từ output của model,
@@ -471,8 +461,28 @@ class GenerateTestInput(BaseModel):
     userId: Optional[str] = None
     topic: str
     difficulty: str = "medium"
-    testType: str = "standard"  # Thêm trường này (node, standard, thptqg)
-    numQuestions: int = 5       # Thêm trường này
+    testType: str = "standard"  # (node, standard, thptqg)
+    numQuestions: int = 5       # số câu hỏi
+
+
+def get_test_cache_path(req: GenerateTestInput) -> Path:
+    """
+    Tạo đường dẫn file cache dựa trên nội dung request.
+    Hai request giống hệt nhau (userId/topic/difficulty/testType/numQuestions)
+    sẽ dùng chung một file cache.
+    """
+    key_data = {
+        "userId": req.userId,
+        "topic": req.topic,
+        "difficulty": req.difficulty,
+        "testType": req.testType,
+        "numQuestions": req.numQuestions,
+    }
+    key_str = json.dumps(key_data, ensure_ascii=False, sort_keys=True)
+    key_hash = hashlib.sha256(key_str.encode("utf-8")).hexdigest()[:16]
+    return GENERATED_TESTS_FOLDER / f"test_{key_hash}.json"
+
+
 # ===== HELPER FUNCTIONS =====
 
 def evaluate_node_status(score: float, has_opened: bool) -> str:
@@ -489,16 +499,6 @@ def evaluate_node_status(score: float, has_opened: bool) -> str:
         return "mastered"
 
     return "learning"
-
-
-def _exercise_cache_key(user_id: Optional[str], topic: str, difficulty: str, count: int) -> str:
-    """Build cache key for exercise generation."""
-    return f"{user_id or 'anon'}::{topic}::{difficulty}::{count}"
-
-
-def _test_cache_key(user_id: Optional[str], topic: str, difficulty: str, testType: str, numQuestions: int) -> str:
-    """Build cache key for test generation."""
-    return f"{user_id or 'anon'}::{topic}::{difficulty}::{testType}::{numQuestions}"
 
 # --- SỬA LỖI: HÀM DỌN DẸP JSON ---
 def clean_json_response(raw_text: str) -> str:
@@ -576,8 +576,16 @@ async def root():
 async def handle_chat(request: ChatInputSchema):
     """Handle chat using a persistent ChatSession for speed."""
     try:
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+            "response_mime_type": "application/json",
+        }
 
         # 1) Xây dựng lại lịch sử cho Gemini ChatSession
+        gemini_history = []
         gemini_history = []
         for turn in request.history:
             if not turn.content:
@@ -591,38 +599,29 @@ async def handle_chat(request: ChatInputSchema):
             )
 
         # 2) Khởi tạo ChatSession với lịch sử đã có
-        #    Prompt (system + blueprint) được cache qua _chat_model để không gửi lặp lại
-        chat = _chat_model().start_chat(history=gemini_history)
+        #    Điều này cho phép model duy trì ngữ cảnh mà không cần gửi lại toàn bộ
+        #    OPTIMIZATION: Initialize model here or use cached one
+        model = genai.GenerativeModel(
+            "gemini-2.5-flash",
+            generation_config=generation_config,
+            system_instruction=CHAT_SYSTEM_INSTRUCTION,
+        )
+        chat = model.start_chat(history=gemini_history)
 
         # 3) Chuẩn bị nội dung tin nhắn MỚI
         # RAG INTEGRATION
         context_text = ""
         if request.userId:
             print(f"🔍 Searching documents for user {request.userId}...")
-            rag_start = time.perf_counter()
-            docs = await rag_service.search_similar_documents(
-                request.message, request.userId, purpose="chat"
-            )
-            rag_duration_ms = (time.perf_counter() - rag_start) * 1000
-
+            docs = await rag_service.search_similar_documents(request.message, request.userId, purpose="chat")
             if docs:
-                lines: List[str] = []
+                context_text = "\n\n=== THÔNG TIN THAM KHẢO TỪ TÀI LIỆU CỦA BẠN ===\n"
                 for d in docs:
-                    title = d.get("title") or d.get("file_name") or "Tài liệu"
-                    content = d.get("content") or ""
-                    lines.append(f"- [{title}]: {content}")
+                    context_text += f"- [{d['file_name']}]: {d['content']}\n"
+                context_text += "==============================================\n"
+                print(f"✅ Found {len(docs)} relevant chunks")
 
-                context_text = (
-                    "\n\n=== THÔNG TIN THAM KHẢO TỪ TÀI LIỆU CỦA BẠN ===\n"
-                    + "\n".join(lines)
-                    + "\n==============================================\n"
-                )
-
-            print(
-                f"✅ RAG found {len(docs) if request.userId else 0} chunks in {rag_duration_ms:.1f} ms"
-            )
-
-        user_prompt = f"""{context_text}\nHọc sinh vừa hỏi: {request.message}"""
+        user_prompt = f"""{CHAT_RESPONSE_BLUEPRINT}\n\n{context_text}\nHọc sinh vừa hỏi: {request.message}"""
         user_parts = [{"text": user_prompt}]
 
         if request.media:
@@ -734,25 +733,18 @@ async def handle_generate_exercises(request: GenerateExercisesInput):
     """Generate math exercises based on topic"""
     try:
         print(f"📚 Generating exercises for topic: {request.topic}")
-
-        # In-memory cache with TTL 600s
-        cache_key = _exercise_cache_key(request.userId, request.topic, request.difficulty, request.count)
-        now = time.time()
-        cached = _EXERCISE_CACHE.get(cache_key)
-        if cached and now - cached[0] < 600:
-            return cached[1]
-
+        
         # RAG Integration
         context_text = ""
         if request.userId:
-            docs = await rag_service.search_similar_documents(request.topic, request.userId, purpose="test") # Use test materials
-            if docs:
+             docs = await rag_service.search_similar_documents(request.topic, request.userId, purpose="test") # Use test materials
+             if docs:
                 context_text = "\n\n=== TÀI LIỆU THAM KHẢO ===\n"
                 for d in docs:
                     context_text += f"- {d['content']}\n"
         
         # Fallback to local files if no RAG results (optional, or keep both)
-        reference_text = load_reference_materials_cached(str(EXERCISES_FOLDER), max_files=3)
+        reference_text = load_reference_materials(str(EXERCISES_FOLDER), max_files=3)
         
         generation_config = {
             "temperature": 0.7,
@@ -802,60 +794,14 @@ YÊU CẦU:
         
         exercises_text = response.text.strip()
         
-        # Cache result
-        _EXERCISE_CACHE[cache_key] = (now, exercises_text)
-        
-        return exercises_text
-
-    except Exception as e:
-        print(f"Error generating exercises: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/stt")
-async def stt_endpoint(file: UploadFile = File(...)):
-    try:
-        # Save temp file
-        temp_filename = f"temp_{int(time.time())}_{file.filename}"
-        async with aiofiles.open(temp_filename, 'wb') as out_file:
-            content = await file.read()
-            await out_file.write(content)
-        
-        text = await audio_service.transcribe_audio(temp_filename, mime_type=file.content_type or "audio/mp3")
-        
-        # Cleanup
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-        
-        return {"text": text}
-    except Exception as e:
-        print(f"STT Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-class TTSInput(BaseModel):
-    text: str
-
-@app.post("/api/tts")
-async def tts_endpoint(input: TTSInput):
-    try:
-        output_filename = f"tts_{int(time.time())}.mp3"
-        await audio_service.generate_audio(input.text, output_filename)
-        
-        # Note: FileResponse will stream the file. 
-        # We might want to clean it up later, but for now let's keep it simple.
-        # A background task could clean up old files.
-        return FileResponse(output_filename, media_type="audio/mpeg", filename="response.mp3")
-    except Exception as e:
-        print(f"TTS Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
         if not exercises_text:
             raise ValueError("Model trả về nội dung trống")
-
+        
         print(f"✅ Generated exercises: {len(exercises_text)} characters")
-        response_payload = {"exercises": exercises_text}
-        _EXERCISE_CACHE[cache_key] = (now, response_payload)
-
-        return response_payload
+        
+        return {
+            "exercises": exercises_text
+        }
         
     except Exception as e:
         print(f"❌ Generate exercises error: {e}")
@@ -1064,13 +1010,19 @@ def escape_backslashes(obj):
 async def handle_generate_test(request: GenerateTestInput):
     """Generate a test based on PDF/Word reference materials"""
     try:
+        # 1️⃣ Kiểm tra cache trước: nếu đã có file thì trả luôn, không gọi Gemini nữa
+        cache_path = get_test_cache_path(request)
+        if cache_path.exists():
+            try:
+                with cache_path.open("r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                print(f"✅ Trả đề thi từ cache: {cache_path.name}")
+                return cached_data
+            except Exception as e:
+                print(f"⚠️ Lỗi đọc cache {cache_path}: {e}. Sẽ tạo đề mới.")
+
         print(f"📝 Loading test reference materials for topic: {request.topic}")
-        cache_key = _test_cache_key(request.userId, request.topic, request.difficulty, request.testType, request.numQuestions)
-        now = time.time()
-        cached = _TEST_CACHE.get(cache_key)
-        if cached and now - cached[0] < 900:
-            return cached[1]
-        reference_text = load_reference_materials_cached(str(TESTS_FOLDER), max_files=3)
+        reference_text = load_reference_materials(str(TESTS_FOLDER), max_files=3)
 
         generation_config = {
             "temperature": 0.6,
@@ -1092,14 +1044,14 @@ async def handle_generate_test(request: GenerateTestInput):
                 for d in docs:
                     context_text += f"- {d['content']}\n"
 
-        # --- PROMPT GIỮ NGUYÊN --- 
+        # ⚠️ Prompt dùng đúng y như bạn gửi
         prompt = f"""Tạo đề kiểm tra TOÁN LỚP 12 về chủ đề: "{request.topic}" Độ khó: {request.difficulty} TÀI LIỆU THAM KHẢO: {context_text} {reference_text if reference_text else "Không có tài liệu. Tạo đề theo chuẩn THPT QG."} QUY TẮC QUAN TRỌNG (CHUẨN FORM THPT 2025): 1. Mỗi câu hỏi PHẢI có đầy đủ dữ liệu (phương trình, hàm số, đồ thị...) 2. Sử dụng LaTeX cho công thức: $x^2$ hoặc $x^2 + 2x + 1 = 0$ 3. Câu hỏi phải CỤ THỂ, KHÔNG mơ hồ 4. Đáp án phải CHÍNH XÁC 5. Cấu trúc đề: - Phần 1: Trắc nghiệm 4 lựa chọn (A,B,C,D) - Phần 2: Trắc nghiệm Đúng/Sai (4 ý a,b,c,d) - Phần 3: Trả lời ngắn (Điền số) VÍ DỤ MẪU: TRẮC NGHIỆM TỐT: "Câu 1: Phương trình $x^2 - 5x + 6 = 0$ có bao nhiêu nghiệm?" TRẮC NGHIỆM SAI (THIẾU DỮ LIỆU): "Câu 1: Phương trình có bao nhiêu nghiệm?" ❌ ĐÚNG/SAI TỐT: "Câu 5: Cho hàm số $y = x^3 - 3x + 1$. Xét tính đúng/sai của các mệnh đề sau: a) Hàm số đồng biến trên khoảng $(1; +\\infty)$ b) Đồ thị hàm số cắt trục hoành tại 3 điểm c) Hàm số có cực đại tại $x = -1$ d) $\\lim_{{x \\to +\\infty}} y = +\\infty$" QUAN TRỌNG - PHẦN ĐÚNG/SAI: Câu hỏi đúng/sai PHẢI có cấu trúc: - prompt: "Câu X: Cho [dữ liệu cụ thể]. Xét tính đúng/sai của các mệnh đề sau:" - statements: Mảng 4 mệnh đề CỤ THỂ, có thể đánh giá được VÍ DỤ MẪU ĐÚNG: {{ "id": "tf1", "type": "true-false", "prompt": "Câu 5: Cho hàm số $y = x^3 - 3x + 1$. Xét tính đúng/sai:", "statements": [ "Hàm số đồng biến trên khoảng $(1; +\\infty)$", "Đồ thị hàm số cắt trục hoành tại 3 điểm", "Hàm số có cực đại tại $x = -1$", "Giới hạn $\\lim_{{x \\to +\\infty}} y = +\\infty$" ], "answer": [true, true, true, true] }} VÍ DỤ SAI (KHÔNG LÀM THẾ NÀY): {{ "statements": ["a) Đúng", "b) Sai", "c) Đúng", "d) Sai"] ❌ }} ***QUAN TRỌNG VỀ JSON (BẮT BUỘC):*** Toàn bộ đầu ra là một chuỗi JSON. Do đó, tất cả các ký tự gạch chéo ngược (\\) BÊN TRONG chuỗi (ví dụ: trong LaTeX) PHẢI được thoát (escaped) bằng cách nhân đôi. VÍ DỤ: - SAI: "$\\frac{{1}}{{2}}$" - ĐÚNG: "$\\\\frac{{1}}{{2}}$" - SAI: "$\\lim_{{x \\to 0}}$" - ĐÚNG: "$\\\\lim_{{x \\\\to 0}}$" - SAI: "$(1; +\\infty)$" - ĐÚNG: "$(1; +\\\\infty)$" YÊU CẦU: Trả về JSON thuần túy, KHÔNG markdown code block: Trả về JSON: {{ "title": "KIỂM TRA {request.topic.upper()}", "parts": {{ "multipleChoice": {{ ... }}, "trueFalse": {{ "title": "PHẦN 2: ĐÚNG/SAI", "questions": [ {{ "id": "tf1", "type": "true-false", "prompt": "Câu 5: Cho hàm số $y = 2x^2 - 4x + 1$. Xét tính đúng/sai của các mệnh đề sau:", "statements": [ "Đồ thị hàm số có trục đối xứng $x = 1$", "Hàm số có giá trị nhỏ nhất bằng $-1$", "Đồ thị hàm số đi qua điểm $(0, 1)$", "Hàm số nghịch biến trên khoảng $(-\\\\infty; 1)$" ], "answer": [true, true, true, true] }} ] }}, "shortAnswer": {{ ... }} }} }} KHÔNG dùng a), b), c), d) trong statements! Mỗi statement là một mệnh đề hoàn chỉnh! LƯU Ý BẮT BUỘC: - KHÔNG dùng markdown
 json ...
 - Mỗi câu hỏi PHẢI có đầy đủ dữ liệu cụ thể - LaTeX dùng $ cho inline, $ cho display - TẤT CẢ DẤU \\ TRONG LATEX PHẢI ĐƯỢC ESCAPE (ví dụ: \\\\frac, \\\\lim, \\\\infty) - answer trong multipleChoice: 0=option[0], 1=option[1], 2=option[2], 3=option[3] - answer trong trueFalse: [true, false, true, false] - answer trong shortAnswer: string số (max 6 ký tự)"""
 
         response = model.generate_content(prompt)
 
-        # --- Parse JSON an toàn ---
+        # --- Parse JSON an toàn (giữ logic cũ của bạn) ---
         try:
             json_text = clean_json_response(response.text)
             if not json_text:
@@ -1109,12 +1061,10 @@ json ...
             if not json_text:
                 raise ValueError("Không tìm thấy JSON hợp lệ")
 
-            # ✨ Sửa ở đây: escape \ trước khi json.loads
+            # ✨ giữ hack cũ: escape \ trước khi json.loads
             safe_json_text = json_text.replace("\\", "\\\\")  # tất cả \ → \\
 
             result = json.loads(safe_json_text)
-
-
 
         except json.JSONDecodeError as e:
             print(f"❌ JSON parse error: {e}")
@@ -1126,18 +1076,28 @@ json ...
 
         # Validate structure
         if "parts" not in result or "multipleChoice" not in result["parts"]:
-            raise HTTPException(status_code=500, detail="Dữ liệu đề thi thiếu cấu trúc 'parts' hoặc 'multipleChoice'")
+            raise HTTPException(
+                status_code=500,
+                detail="Dữ liệu đề thi thiếu cấu trúc 'parts' hoặc 'multipleChoice'"
+            )
 
-        response_payload = {
+        # Đóng gói response chuẩn
+        response_data = {
             "topic": request.topic,
             "difficulty": request.difficulty,
             "has_reference": bool(reference_text),
-            "test": result
+            "test": result,
         }
 
-        _TEST_CACHE[cache_key] = (now, response_payload)
+        # 2️⃣ Lưu cache để lần sau gọi lại không tốn quota
+        try:
+            with cache_path.open("w", encoding="utf-8") as f:
+                json.dump(response_data, f, ensure_ascii=False, indent=2)
+            print(f"💾 Đã lưu cache đề thi: {cache_path.name}")
+        except Exception as e:
+            print(f"⚠️ Không thể lưu cache đề thi: {e}")
 
-        return response_payload
+        return response_data
 
     except HTTPException:
         raise
@@ -1154,6 +1114,7 @@ json ...
             )
 
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/api/summarize-topic")
@@ -1444,10 +1405,10 @@ if __name__ == "__main__":
     print("="*60)
     print(f"📁 Exercises folder: {EXERCISES_FOLDER}")
     print(f"📁 Tests folder: {TESTS_FOLDER}")
+    # 📁 Thư mục lưu cache đề thi đã sinh
     print("\n📄 Supported formats: PDF (.pdf), Word (.docx, .doc)")
     print("⚠️  NOTE: Place your files in these folders")
     print("="*60 + "\n")
     
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
