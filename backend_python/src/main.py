@@ -626,7 +626,29 @@ async def handle_chat(request: ChatInputSchema):
 
         if request.media:
             for media in request.media:
-                user_parts.append({"media": {"url": media.url}})
+                # Kiểm tra xem có phải là Data URL không (từ frontend gửi lên dạng base64)
+                if media.url.startswith("data:"):
+                    try:
+                        # Tách header và data. Vd: "data:image/png;base64,JVBERi..."
+                        header, base64_data = media.url.split(",", 1)
+                        
+                        # Lấy mime_type từ header (vd: "image/png")
+                        mime_type = header.split(":")[1].split(";")[0]
+                        
+                        # Thêm vào user_parts theo đúng chuẩn của Gemini SDK
+                        user_parts.append({
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": base64_data
+                            }
+                        })
+                    except Exception as e:
+                        print(f"❌ Lỗi xử lý ảnh: {e}")
+                else:
+                    # Trường hợp là URL ảnh online (nếu có hỗ trợ sau này)
+                    # Gemini không hỗ trợ trực tiếp URL ảnh công khai qua chat session kiểu này
+                    # trừ khi dùng File API, nhưng với base64 thì dùng inline_data là chuẩn nhất.
+                    print(f"⚠️ URL không phải định dạng base64: {media.url[:30]}...")
 
         # 4) Gửi tin nhắn mới (async)
         #    Model sẽ tự động nối lịch sử đã có với tin nhắn mới này
