@@ -1,56 +1,61 @@
 // frontend_nextjs/src/app/login/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/supabase/auth/use-user';
+import { useSupabase } from '@/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader } from 'lucide-react';
-import { useSupabase } from '@/supabase';
+
+function humanizeAuthError(message?: string) {
+  if (!message) return 'Không thể xác thực. Vui lòng thử lại.';
+  const m = message.toLowerCase();
+
+  if (m.includes('invalid login credentials')) return 'Sai email hoặc mật khẩu.';
+  if (m.includes('user already registered')) return 'Email này đã được đăng ký.';
+  if (m.includes('password should be at least')) return 'Mật khẩu quá ngắn.';
+  if (m.includes('email') && m.includes('invalid')) return 'Email không hợp lệ.';
+  return message;
+}
 
 export default function LoginPage() {
   const { user, isUserLoading, error: userError } = useUser();
   const { client: supabase, error: supabaseError } = useSupabase();
   const router = useRouter();
+
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
+
   const [error, setError] = useState('');
 
   useEffect(() => {
-    console.log('🔍 LoginPage - Auth state:', { 
-      user, 
-      isUserLoading, 
-      userError 
-    });
-    
     if (user && !isUserLoading) {
-      console.log('🔄 User is logged in, redirecting...');
       setIsRedirecting(true);
       router.push('/');
     }
-  }, [user, isUserLoading, router, userError]);
+  }, [user, isUserLoading, router]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     setError('');
   };
 
-  const handleEmailPasswordAuth = async (e: React.FormEvent) => {
+  const handleEmailPasswordAuth = async (e: FormEvent) => {
     e.preventDefault();
-    
+
     if (!supabase) {
       setError('Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.');
       return;
@@ -59,69 +64,75 @@ export default function LoginPage() {
     setIsLoading(true);
     setError('');
 
-    console.log('🔐 Attempting authentication:', { isLogin, email: formData.email });
-
     try {
+      const email = formData.email.trim();
+      const password = formData.password;
+
       if (isLogin) {
-        console.log('📝 Signing in...');
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
+          email,
+          password,
         });
 
-        if (signInError) {
-          throw signInError;
-        }
+        if (signInError) throw signInError;
 
         router.push('/');
-      } else {
-        console.log('📝 Signing up...');
-        if (formData.password !== formData.confirmPassword) {
-          setError('Mật khẩu xác nhận không khớp');
-          setIsLoading(false);
-          return;
-        }
-
-        if (formData.password.length < 6) {
-          setError('Mật khẩu phải có ít nhất 6 ký tự');
-          setIsLoading(false);
-          return;
-        }
-
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-        });
-
-        if (signUpError) {
-          throw signUpError;
-        }
-
-        if (data.session) {
-          router.push('/');
-        } else {
-          setError('Đăng ký thành công. Vui lòng kiểm tra email để xác nhận tài khoản.');
-        }
+        return;
       }
+
+      // === SIGN UP (KHÔNG CẦN VERIFY EMAIL) ===
+      if (password !== formData.confirmPassword) {
+        setError('Mật khẩu xác nhận không khớp');
+        setIsLoading(false);
+        return;
+      }
+
+      if (password.length < 6) {
+        setError('Mật khẩu phải có ít nhất 6 ký tự');
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (signUpError) throw signUpError;
+
+      // Nếu Supabase trả session ngay (khi đã tắt Confirm email) => vào thẳng
+      if (data.session) {
+        router.push('/');
+        return;
+      }
+
+      // Fallback: một số cấu hình/edge-case có thể không trả session ngay
+      // => auto-login luôn để đúng yêu cầu "đăng ký xong đăng nhập được"
+      const { error: autoSignInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (autoSignInError) {
+        // Nếu vẫn lỗi thì chuyển về mode đăng nhập
+        setIsLogin(true);
+        setError('Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.');
+        return;
+      }
+
+      router.push('/');
     } catch (err: any) {
       console.error('❌ Authentication error:', err);
-
-      if (typeof err?.message === 'string') {
-        setError(err.message);
-      } else {
-        setError('Không thể xác thực. Vui lòng thử lại.');
-      }
+      setError(humanizeAuthError(err?.message));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGuestLogin = () => {
-    console.log('👤 Continuing as guest');
     router.push('/tests');
   };
 
-  // Hiển thị lỗi nếu có vấn đề với auth
   const blockingError = userError || supabaseError;
 
   if (blockingError) {
@@ -138,9 +149,7 @@ export default function LoginPage() {
     );
   }
 
-  // Hiển thị loading
   if (isUserLoading || isRedirecting) {
-    console.log('⏳ Loading state:', { isUserLoading, isRedirecting });
     return (
       <main className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4">
@@ -151,22 +160,18 @@ export default function LoginPage() {
     );
   }
 
-  console.log('🎨 Rendering login form');
-
   return (
     <main className="flex items-center justify-center min-h-screen p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">
-            {isLogin ? 'Đăng nhập' : 'Đăng ký'}
-          </CardTitle>
+          <CardTitle className="text-2xl">{isLogin ? 'Đăng nhập' : 'Đăng ký'}</CardTitle>
           <CardDescription>
-            {isLogin 
-              ? 'Đăng nhập để lưu kết quả và theo dõi tiến độ học tập' 
-              : 'Tạo tài khoản để lưu kết quả và theo dõi tiến độ học tập'
-            }
+            {isLogin
+              ? 'Đăng nhập để lưu kết quả và theo dõi tiến độ học tập'
+              : 'Tạo tài khoản để lưu kết quả và theo dõi tiến độ học tập'}
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleEmailPasswordAuth} className="space-y-4">
             <div className="space-y-2">
@@ -219,14 +224,8 @@ export default function LoginPage() {
               </div>
             )}
 
-            <Button 
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? <Loader className="w-4 h-4 animate-spin mr-2" /> : null}
               {isLogin ? 'Đăng nhập' : 'Đăng ký'}
             </Button>
           </form>
@@ -234,14 +233,14 @@ export default function LoginPage() {
           <div className="mt-4 text-center">
             <button
               type="button"
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError('');
+              }}
               className="text-sm text-blue-600 hover:text-blue-700"
               disabled={isLoading}
             >
-              {isLogin 
-                ? 'Chưa có tài khoản? Đăng ký ngay' 
-                : 'Đã có tài khoản? Đăng nhập ngay'
-              }
+              {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập ngay'}
             </button>
           </div>
 
@@ -250,18 +249,11 @@ export default function LoginPage() {
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Hoặc
-              </span>
+              <span className="bg-background px-2 text-muted-foreground">Hoặc</span>
             </div>
           </div>
 
-          <Button 
-            onClick={handleGuestLogin}
-            className="w-full"
-            variant="outline"
-            disabled={isLoading}
-          >
+          <Button onClick={handleGuestLogin} className="w-full" variant="outline" disabled={isLoading}>
             Tiếp tục với tư cách khách
           </Button>
 

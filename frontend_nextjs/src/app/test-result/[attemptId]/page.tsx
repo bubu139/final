@@ -14,14 +14,21 @@ import { ArrowLeft, Loader, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { API_BASE_URL } from '@/lib/utils';
 
+// 🔹 THÊM: cache kết quả theo từng attemptId
+import {
+  getTestResultFromCache,
+  saveTestResultToCache,
+} from '@/lib/answer-review-cache';
+
 export default function TestResultPage() {
   const params = useParams();
   const router = useRouter();
   const { user, isUserLoading } = useUser();
   const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
-  
-  const attemptId = Array.isArray(params.attemptId) ? params.attemptId[0] : params.attemptId;
-  
+
+  const attemptId =
+    Array.isArray(params.attemptId) ? params.attemptId[0] : (params.attemptId as string | undefined);
+
   const [attempt, setAttempt] = useState<TestAttempt | null>(null);
   const [testData, setTestData] = useState<Test | null>(null);
   const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
@@ -61,7 +68,7 @@ export default function TestResultPage() {
       try {
         const historyService = new TestHistoryService(supabase);
 
-        // Load attempt
+        // 1️⃣ Load attempt từ DB
         const attemptData = await historyService.getAttemptById(attemptId);
         if (!attemptData) {
           throw new Error('Không tìm thấy kết quả bài kiểm tra');
@@ -73,55 +80,74 @@ export default function TestResultPage() {
 
         setAttempt(attemptData);
 
-        // Load weak topics analysis
+        // 2️⃣ Load phân tích weak topics như cũ
         const analysis = await historyService.analyzeWeakTopics(user.id);
         setWeakTopics(analysis.weakTopics);
-        
-        // Re-generate test data (hoặc load từ cache nếu có)
+
+        // 3️⃣ ƯU TIÊN: Lấy testData từ cache theo attemptId
+        const cached = getTestResultFromCache(attemptId);
+        if (cached?.test) {
+          setTestData(cached.test as Test);
+          return; // Đã có snapshot riêng → không cần gọi API nữa
+        }
+
+        // 4️⃣ Nếu chưa có cache → gọi API generate-test như cũ
         const response = await fetch(`${API_BASE_URL}/api/generate-test`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            topic: attemptData.topic, 
-            difficulty: attemptData.difficulty 
+          body: JSON.stringify({
+            topic: attemptData.topic,
+            difficulty: attemptData.difficulty,
           }),
         });
-        
+
         if (!response.ok) {
           throw new Error('Không thể tải dữ liệu đề thi');
         }
-        
+
         const data = await response.json();
-        setTestData(data.test);
-        
+        const test = (data.test ?? data) as Test;
+
+        setTestData(test);
+
+        // 5️⃣ Lưu snapshot đề lại theo attemptId để lần sau cố định
+        saveTestResultToCache(attemptId, {
+          test,
+          topic: attemptData.topic,
+          difficulty: attemptData.difficulty,
+        });
       } catch (err: any) {
         console.error('Error loading test result:', err);
-        setError(err.message);
+        setError(err.message ?? 'Đã xảy ra lỗi khi tải kết quả bài kiểm tra.');
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadData();
+    void loadData();
   }, [attemptId, user, isUserLoading, isInitialized, supabase, supabaseError, router]);
 
   const handleRetakeTest = () => {
     if (attempt) {
-      router.push(`/tests/${attempt.testId}?topic=${encodeURIComponent(attempt.topic)}&difficulty=${attempt.difficulty}`);
+      router.push(
+        `/tests/${attempt.testId}?topic=${encodeURIComponent(
+          attempt.topic,
+        )}&difficulty=${attempt.difficulty}`,
+      );
     }
   };
 
   const handleTakeAdaptiveTest = async () => {
     if (!user) return;
-    
+
     try {
       if (!supabase) return;
 
       const historyService = new TestHistoryService(supabase);
       const analysis = await historyService.analyzeWeakTopics(user.id);
 
-      const weakTopicNames = analysis.weakTopics.map(t => t.topic);
-      
+      const weakTopicNames = analysis.weakTopics.map((t) => t.topic);
+
       router.push(`/tests/adaptive?topics=${encodeURIComponent(weakTopicNames.join(','))}`);
     } catch (error) {
       console.error('Error generating adaptive test:', error);
@@ -145,7 +171,9 @@ export default function TestResultPage() {
         <div className="text-center max-w-md">
           <AlertTriangle className="w-16 h-16 text-destructive mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Đã có lỗi xảy ra</h2>
-          <p className="text-muted-foreground mb-6">{error || 'Không thể tải kết quả bài kiểm tra'}</p>
+          <p className="text-muted-foreground mb-6">
+            {error || 'Không thể tải kết quả bài kiểm tra'}
+          </p>
           <Button asChild>
             <Link href="/test-history">
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -160,8 +188,8 @@ export default function TestResultPage() {
   return (
     <main className="flex-1 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <Link 
-          href="/test-history" 
+        <Link
+          href="/test-history"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
         >
           <ArrowLeft className="w-4 h-4" />

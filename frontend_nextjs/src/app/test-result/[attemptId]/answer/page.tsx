@@ -12,6 +12,12 @@ import { Loader } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
+// 🔹 DÙNG CÙNG CACHE VỚI TRANG KẾT QUẢ
+import {
+  getTestResultFromCache,
+  saveTestResultToCache,
+} from "@/lib/answer-review-cache";
+
 export default function AnswerReview() {
   const params = useParams();
   const router = useRouter();
@@ -36,7 +42,7 @@ export default function AnswerReview() {
 
         const historyService = new TestHistoryService(supabase);
 
-        // 1. LẤY ATTEMPT TỪ LỊCH SỬ
+        // 1️⃣ LẤY ATTEMPT TỪ LỊCH SỬ
         const raw = await historyService.getAttemptById(attemptId);
         if (!raw) {
           if (!cancelled) setError("Không tìm thấy dữ liệu bài làm.");
@@ -44,9 +50,21 @@ export default function AnswerReview() {
         }
 
         const attemptData = raw as TestAttempt;
-        if (!cancelled) setAttempt(attemptData);
+        if (!cancelled) {
+          setAttempt(attemptData);
+        }
 
-        // 2. GỌI LẠI ĐỀ THI TỪ API generate-test
+        // 2️⃣ ƯU TIÊN: LẤY ĐỀ TỪ CACHE THEO attemptId
+        const cached = getTestResultFromCache(attemptId);
+        if (cached?.test) {
+          if (!cancelled) {
+            setTestData(cached.test as Test);
+          }
+          // Đã có snapshot riêng của attempt này → không cần gọi API nữa
+          return;
+        }
+
+        // 3️⃣ CHƯA CÓ CACHE → GỌI LẠI API generate-test (FALLBACK)
         const res = await fetch(`${API_BASE_URL}/api/generate-test`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -66,9 +84,18 @@ export default function AnswerReview() {
           throw new Error("API không trả về dữ liệu đề thi (test).");
         }
 
+        const test = json.test as Test;
+
         if (!cancelled) {
-          setTestData(json.test as Test);
+          setTestData(test);
         }
+
+        // 4️⃣ LƯU SNAPSHOT ĐỀ VÀO CACHE THEO attemptId
+        saveTestResultToCache(attemptId, {
+          test,
+          topic: attemptData.topic,
+          difficulty: attemptData.difficulty,
+        });
       } catch (err: any) {
         console.error("❌ Lỗi khi tải dữ liệu trang đáp án:", err);
         if (!cancelled) {
@@ -84,7 +111,7 @@ export default function AnswerReview() {
       }
     };
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;

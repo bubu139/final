@@ -168,13 +168,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </SidebarFooter>
         </Sidebar>
 
-        <main className="flex-1 overflow-auto">
-          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <main className="flex-1 overflow-auto relative flex flex-col">
+         <div className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b flex-shrink-0">
             <div className="flex h-14 items-center px-4">
               <SidebarTrigger />
             </div>
           </div>
+          <div className="flex-1 relative">
           {children}
+          </div>
         </main>
       </div>
     </SidebarProvider>

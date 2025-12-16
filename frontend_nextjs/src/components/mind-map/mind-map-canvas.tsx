@@ -1,33 +1,55 @@
 "use client";
 
 import type { NodeProgress } from "@/lib/nodeProgressApi";
+
 import type { MindMapNode, MindMapNodeWithState, NodePosition, Edge } from '@/types/mindmap';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MindMapNode as MindMapNodeComponent } from './mind-map-node';
 
-// Props nhận thêm progress
+type NodeProgressWithMaxScore = NodeProgress & {
+  max_score?: number;
+};
+
 type MindMapCanvasProps = {
   data: MindMapNode;
-  progress: Record<string, NodeProgress>;
+  progress: Record<string, NodeProgressWithMaxScore>;
   selectedNodeId: string | null;
   onNodeClick: (node: MindMapNode) => void;
 };
 
-// Hàm helper xác định màu dựa trên tiến độ
-const getStatusColor = (p?: NodeProgress) => {
-  if (!p) return "#2196F3"; // Mặc định: Xanh dương (Chưa học)
-  if (p.score !== null && p.score >= 80) return "#4CAF50"; // Xanh lá (Mastered)
-  if (p.status === "learning" || p.score !== null) return "#FFC107"; // Vàng (Đang học)
-  return "#2196F3";
+// ✅ LOGIC MÀU MỚI: Tất cả node mặc định Vàng, chỉ Xanh Lá khi >= 80 điểm
+const getStatusColor = (p?: NodeProgressWithMaxScore) => {
+  if (!p) return "#FFC107"; // Mặc định: Vàng (Chưa làm test)
+
+  const currentScore = p.max_score ?? p.score ?? 0;
+
+  // Chỉ có 2 trạng thái:
+  // - Vàng (< 80): Đang học hoặc chưa đạt
+  // - Xanh Lá (>= 80): Đã thành thạo
+  if (currentScore >= 80) {
+    return "#4CAF50"; // Xanh lá (Mastered)
+  }
+
+  return "#FFC107"; // Vàng (Learning/Not Started)
 };
 
-// Helper khởi tạo state cho nodes
 const initializeNodes = (node: MindMapNode): Map<string, MindMapNodeWithState> => {
   const map = new Map<string, MindMapNodeWithState>();
+  const visited = new Set<string>(); // 1. Thêm Set để theo dõi node đã duyệt
+
   function recurse(n: MindMapNode, parentId: string | null, level: number) {
+    if (visited.has(n.id)) return; // 2. Nếu đã duyệt thì dừng lại ngay
+    visited.add(n.id);
+
     const isRoot = parentId === null;
     map.set(n.id, { ...n, isExpanded: isRoot, parentId, level });
-    n.children.forEach(child => recurse(child, n.id, level + 1));
+    
+    // Chỉ duyệt con nếu nó chưa được thăm (để an toàn hơn)
+    n.children.forEach(child => {
+        if (!visited.has(child.id)) {
+            recurse(child, n.id, level + 1)
+        }
+    });
   }
   recurse(node, null, 0);
   return map;
@@ -39,7 +61,6 @@ export function MindMapCanvas({
   selectedNodeId,
   onNodeClick
 }: MindMapCanvasProps) {
-  // --- GIỮ NGUYÊN LOGIC LAYOUT & STATE CỦA BẠN ---
   const [nodes, setNodes] = useState<Map<string, MindMapNodeWithState>>(() => initializeNodes(data));
   const [positions, setPositions] = useState<Map<string, NodePosition>>(new Map());
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -66,7 +87,6 @@ export function MindMapCanvas({
     }
   }, []);
 
-  // --- LOGIC TÍNH TOÁN VỊ TRÍ (Layout Engine) ---
   const calculateLayout = useCallback(() => {
     if (draggingNode) return;
     const newPositions = new Map<string, NodePosition>();
@@ -97,6 +117,7 @@ export function MindMapCanvas({
       side: 'left' | 'right'
     ) => {
       newPositions.set(nodeId, { x, y });
+
       const children = getVisibleChildren(nodeId);
       if (children.length === 0) return;
 
@@ -147,6 +168,7 @@ export function MindMapCanvas({
           }
         });
       };
+
       positionSide(leftChildren, 'left');
       positionSide(rightChildren, 'right');
     }
@@ -172,7 +194,6 @@ export function MindMapCanvas({
     calculateLayout();
   }, [calculateLayout]);
 
-  // --- LOGIC DRAG & PAN & ZOOM ---
   const updateEdges = useCallback((currentPositions: Map<string, NodePosition>) => {
     const newEdges: Edge[] = [];
     nodes.forEach(node => {
@@ -195,44 +216,56 @@ export function MindMapCanvas({
     setNodes(prevNodes => {
       const newNodes = new Map(prevNodes);
       const node = newNodes.get(nodeId);
-      if (node) newNodes.set(nodeId, { ...node, isExpanded: !node.isExpanded });
+      if (node) {
+        newNodes.set(nodeId, { ...node, isExpanded: !node.isExpanded });
+      }
       return newNodes;
     });
   };
 
-  const handleNodeDragStart = (nodeId: string) => setDraggingNode(nodeId);
+  const handleNodeDragStart = (nodeId: string) => {
+    setDraggingNode(nodeId);
+  };
 
   const handleDrag = useCallback((e: React.MouseEvent) => {
     if (!draggingNode || !canvasRef.current) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left - viewTransform.x) / viewTransform.scale;
     const y = (e.clientY - rect.top - viewTransform.y) / viewTransform.scale;
-    setPositions(prev => {
-      const newPos = new Map(prev);
-      newPos.set(draggingNode, { x, y });
-      updateEdges(newPos);
-      return newPos;
-    });
+
+useEffect(() => {
+  updateEdges(positions);
+}, [positions, updateEdges]);
   }, [draggingNode, viewTransform, updateEdges]);
 
   const handleDragEnd = useCallback(() => {
-    if (draggingNode) setDraggingNode(null);
-    if (isPanning) setIsPanning(false);
+    if (draggingNode) {
+      setDraggingNode(null);
+    }
+    if (isPanning) {
+      setIsPanning(false);
+    }
   }, [draggingNode, isPanning]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (!canvasRef.current) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const zoomFactor = 1.1;
     const newScale = e.deltaY < 0 ? viewTransform.scale * zoomFactor : viewTransform.scale / zoomFactor;
     const scale = Math.max(0.1, Math.min(newScale, 5));
+
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
     const contentMouseX = (mouseX - viewTransform.x) / viewTransform.scale;
     const contentMouseY = (mouseY - viewTransform.y) / viewTransform.scale;
+
     const newX = mouseX - contentMouseX * scale;
     const newY = mouseY - contentMouseY * scale;
+
     setViewTransform({ scale, x: newX, y: newY });
   };
 
@@ -244,7 +277,11 @@ export function MindMapCanvas({
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
-      setViewTransform(prev => ({ ...prev, x: prev.x + e.movementX, y: prev.y + e.movementY }));
+      setViewTransform(prev => ({
+        ...prev,
+        x: prev.x + e.movementX,
+        y: prev.y + e.movementY,
+      }));
     } else if (draggingNode) {
       handleDrag(e);
     }
@@ -253,10 +290,13 @@ export function MindMapCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const handleMouseUp = () => handleDragEnd();
     const handleMouseMove = (e: MouseEvent) => handleCanvasMouseMove(e as unknown as React.MouseEvent);
+
     canvas.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -308,21 +348,24 @@ export function MindMapCanvas({
             })}
           </g>
         </svg>
-        {visibleNodes.map(node => (
-          <MindMapNodeComponent
-            key={node.id}
-            node={node}
-            position={positions.get(node.id)}
-            onToggle={handleToggleNode}
-            onDragStart={handleNodeDragStart}
-            onClick={() => onNodeClick(node)}
-            
-            // --- TÍCH HỢP MÀU VÀ ĐIỂM Ở ĐÂY ---
-            color={getStatusColor(progress[node.id])}
-            score={progress[node.id]?.score}
-            isSelected={selectedNodeId === node.id}
-          />
-        ))}
+        {visibleNodes.map(node => {
+          const nodeProgress = progress[node.id];
+          const displayScore = nodeProgress?.max_score ?? nodeProgress?.score;
+
+          return (
+            <MindMapNodeComponent
+              key={node.id}
+              node={node}
+              position={positions.get(node.id)}
+              onToggle={handleToggleNode}
+              onDragStart={handleNodeDragStart}
+              onClick={() => onNodeClick(node)}
+              color={getStatusColor(nodeProgress)} 
+              score={displayScore} 
+              isSelected={selectedNodeId === node.id}
+            />
+          );
+        })}
       </div>
     </div>
   );

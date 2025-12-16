@@ -3,9 +3,8 @@ import { useState, useRef, useEffect, FormEvent } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-// 🔥 UPDATE: Thêm icon Camera
-import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2, Camera } from 'lucide-react';
+// import { Badge } from '@/components/ui/badge'; // Bỏ nếu không dùng để nhẹ file
+import { Paperclip, Send, Bot, User, Sparkles, X, File as FileIcon, Compass, Sigma, Share2, Camera, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import { MathInput } from '@/components/ui/math-input';
@@ -15,10 +14,10 @@ import { API_BASE_URL } from '@/lib/utils';
 import { GeoGebraModal } from '@/components/chat/GeoGebraModal';
 import Link from 'next/link';
 import { MindmapInsightPayload, upsertMindmapInsights } from '@/lib/mindmap-storage';
-// 🔥 UPDATE: Import Modal Camera mới
 import { CameraCaptureDialog } from '@/components/chat/CameraCaptureDialog';
+import { useIsMobile } from '@/hooks/use-mobile'; //
 
-// --- CÁC TYPE VÀ INTERFACE (GIỮ NGUYÊN) ---
+// ... (GIỮ NGUYÊN CÁC TYPE VÀ INTERFACE: Message, AttachedFile, ChatApiResponse...)
 type Message = {
   text: string;
   isUser: boolean;
@@ -69,73 +68,62 @@ const updateNodeScore = async (nodeId: string, score: number) => {
       body: JSON.stringify({ nodeId, score }),
     });
     if (!res.ok) {
-      const err = await res.json();
-      console.error("Update score lỗi:", err);
+        // const err = await res.json();
+        // console.error("Update score lỗi:", err);
     }
   } catch (error) {
     console.error("Lỗi khi gọi updateScore:", error);
   }
 };
 
-// --- DANH SÁCH CÔNG CỤ "SMART" (GIỮ NGUYÊN) ---
-const SMART_TOOLS = [
-  { label: 'x²', latex: 'x^2' },                  
-  { label: 'aⁿ', latex: '#?^{#?}' },              
-  { label: '√',  latex: '\\sqrt{#?}' },           
-  { label: '√n', latex: '\\sqrt[#?]{#?}' },       
-  { label: '÷',  latex: '\\frac{#?}{#?}' },       
-  { label: '∫',  latex: '\\int_{#?}^{#?}' },      
-  { label: 'Σ',  latex: '\\sum_{#?}^{#?}' },      
-  { label: '( )', latex: '\\left(#?\\right)' },   
-];
-
-// --- DANH SÁCH KÝ TỰ CHO POPOVER (GIỮ NGUYÊN) ---
+// ... (GIỮ NGUYÊN CONST SMART_TOOLS VÀ latexSymbols)
 const latexSymbols = [
-  {
-    label: "Mẫu công thức",
-    symbols: [
-      { display: "x²", insert: "x^2" },
-      { display: "aⁿ", insert: "#?^{#?}" },
-      { display: "√",  insert: "\\sqrt{#?}" },
-      { display: "√n", insert: "\\sqrt[#?]{#?}" },
-      { display: "÷",  insert: "\\frac{#?}{#?}" },
-      { display: "∫",  insert: "\\int_{#?}^{#?}" },
-      { display: "Σ",  insert: "\\sum_{#?}^{#?}" },
-      { display: "( )", insert: "\\left(#?\\right)" },
-    ]
-  },
-  {
-    label: "Toán tử",
-    symbols: [
-      { display: "＋", insert: "+" },
-      { display: "−", insert: "-" },
-      { display: "×", insert: "\\times" },
-      { display: "÷", insert: "\\div" },
-      { display: "=", insert: "=" },
-      { display: "≠", insert: "\\neq" },
-      { display: "≤", insert: "\\le" },
-      { display: "≥", insert: "\\ge" },
-      { display: "±", insert: "\\pm" }
-    ]
-  },
-  {
-    label: "Ký hiệu",
-    symbols: [
-      { display: "α", insert: "\\alpha" },
-      { display: "β", insert: "\\beta" },
-      { display: "π", insert: "\\pi" },
-      { display: "θ", insert: "\\theta" },
-      { display: "∞", insert: "\\infty" },
-      { display: "∈", insert: "\\in" },
-      { display: "∀", insert: "\\forall" },
-      { display: "∃", insert: "\\exists" },
-      { display: "∪", insert: "\\cup" },
-      { display: "∩", insert: "\\cap" },
-    ]
-  }
-];
+    {
+      label: "Mẫu công thức",
+      symbols: [
+        { display: "x²", insert: "x^2" },
+        { display: "aⁿ", insert: "#?^{#?}" },
+        { display: "√",  insert: "\\sqrt{#?}" },
+        { display: "√n", insert: "\\sqrt[#?]{#?}" },
+        { display: "÷",  insert: "\\frac{#?}{#?}" },
+        { display: "∫",  insert: "\\int_{#?}^{#?}" },
+        { display: "Σ",  insert: "\\sum_{#?}^{#?}" },
+        { display: "( )", insert: "\\left(#?\\right)" },
+      ]
+    },
+    {
+      label: "Toán tử",
+      symbols: [
+        { display: "＋", insert: "+" },
+        { display: "−", insert: "-" },
+        { display: "×", insert: "\\times" },
+        { display: "÷", insert: "\\div" },
+        { display: "=", insert: "=" },
+        { display: "≠", insert: "\\neq" },
+        { display: "≤", insert: "\\le" },
+        { display: "≥", insert: "\\ge" },
+        { display: "±", insert: "\\pm" }
+      ]
+    },
+    {
+      label: "Ký hiệu",
+      symbols: [
+        { display: "α", insert: "\\alpha" },
+        { display: "β", insert: "\\beta" },
+        { display: "π", insert: "\\pi" },
+        { display: "θ", insert: "\\theta" },
+        { display: "∞", insert: "\\infty" },
+        { display: "∈", insert: "\\in" },
+        { display: "∀", insert: "\\forall" },
+        { display: "∃", insert: "\\exists" },
+        { display: "∪", insert: "\\cup" },
+        { display: "∩", insert: "\\cap" },
+      ]
+    }
+  ];
 
 export default function ChatPage() {
+  const isMobile = useIsMobile(); // Sử dụng hook để check mobile
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
@@ -145,6 +133,8 @@ export default function ChatPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  // State mở rộng toolbar trên mobile (nếu cần ẩn bớt nút)
+  const [isMobileToolsOpen, setIsMobileToolsOpen] = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -173,6 +163,9 @@ export default function ChatPage() {
   const handleSend = async (e?: FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() && attachedFiles.length === 0) return;
+
+    // Đóng tools trên mobile khi gửi
+    setIsMobileToolsOpen(false);
 
     const normalizedInput = input.trim();
     const userVisibleText = normalizedInput || '📎 Đã gửi file đính kèm';
@@ -223,7 +216,6 @@ export default function ChatPage() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // 🔥 BLOCK MINDMAP ĐÃ SỬA
       if (Array.isArray(result.mindmap_insights) && result.mindmap_insights.length > 0) {
         const normalized: MindmapInsightPayload[] = result.mindmap_insights
           .filter((node): node is ApiMindmapInsight => Boolean(node && node.node_id && node.label))
@@ -239,13 +231,11 @@ export default function ChatPage() {
 
         if (normalized.length > 0) {
           setMindmapUpdates(normalized);
-
           try {
             await upsertMindmapInsights(normalized);
           } catch (err) {
             console.error('Lỗi lưu mindmap:', err);
           }
-
           normalized.forEach((node) => {
             updateNodeScore(node.nodeId, 100);
           });
@@ -322,13 +312,14 @@ export default function ChatPage() {
       scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
     }, 100);
     return () => clearTimeout(t);
-  }, [messages, mindmapUpdates]);
+  }, [messages, mindmapUpdates, attachedFiles]); // Thêm attachedFiles để scroll khi thêm file
 
   useEffect(() => {
     const adjustPadding = () => {
       if (inputContainerRef.current && scrollAreaRef.current) {
         const height = inputContainerRef.current.clientHeight;
-        scrollAreaRef.current.style.paddingBottom = `${height + 20}px`;
+        // Tăng thêm padding trên mobile để tránh bị sát quá
+        scrollAreaRef.current.style.paddingBottom = `${height + (isMobile ? 10 : 20)}px`;
       }
     };
     adjustPadding();
@@ -339,54 +330,56 @@ export default function ChatPage() {
       window.removeEventListener('resize', adjustPadding);
       observer.disconnect();
     };
-  }, []);
+  }, [isMobile]);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-3xl shadow-2xl overflow-hidden border border-blue-100 relative">
-      {/* HEADER */}
-      <header className="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-5 flex items-center gap-4 shadow-lg">
+    // THAY ĐỔI: Sử dụng h-[100dvh] cho mobile, bo góc chỉ trên md
+    <div className="flex flex-col h-[100dvh] md:h-full bg-white md:rounded-3xl shadow-none md:shadow-2xl overflow-hidden border-0 md:border border-blue-100 relative">
+      
+      {/* HEADER: Padding nhỏ hơn trên mobile */}
+      <header className="bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-3 md:px-6 md:py-5 flex items-center gap-3 md:gap-4 shadow-lg shrink-0">
         <div className="relative">
-          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md">
-            <Bot className="w-7 h-7 text-blue-500" />
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full flex items-center justify-center shadow-md">
+            <Bot className="w-6 h-6 md:w-7 md:h-7 text-blue-500" />
           </div>
-          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
+          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 md:w-3 md:h-3 bg-green-400 rounded-full border-2 border-white"></div>
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-white truncate">📚 CVT AI - Giải Toán THPT</h1>
-          <p className="text-blue-100 text-sm flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+          <h1 className="text-lg md:text-xl font-bold text-white truncate">CVT AI - Giải Toán</h1>
+          <p className="text-blue-100 text-xs md:text-sm flex items-center gap-1">
+            <span className="w-1.5 h-1.5 md:w-2 md:h-2 bg-green-400 rounded-full animate-pulse"></span>
             Đang hoạt động
           </p>
         </div>
-        <Sparkles className="w-6 h-6 text-orange-200 animate-pulse" />
+        <Sparkles className="w-5 h-5 md:w-6 md:h-6 text-orange-200 animate-pulse" />
       </header>
 
-      {/* MESSAGE LIST */}
-      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-blue-50" ref={scrollAreaRef}>
-        <div className="p-6 flex flex-col gap-6">
+      {/* MESSAGE LIST: Padding nhỏ hơn */}
+      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-blue-50 scroll-smooth" ref={scrollAreaRef}>
+        <div className="p-3 md:p-6 flex flex-col gap-4 md:gap-6">
           {messages.map((message, index) => (
-            <div key={index} className={cn("flex items-start gap-3", message.isUser ? "justify-end" : "justify-start")}>
+            <div key={index} className={cn("flex items-end md:items-start gap-2 md:gap-3", message.isUser ? "justify-end" : "justify-start")}>
               {!message.isUser && (
-                <Avatar className="w-10 h-10 border-2 border-white shadow-md">
+                <Avatar className="w-8 h-8 md:w-10 md:h-10 border-2 border-white shadow-md mb-1 md:mb-0">
                   <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-500">
-                    <Bot className="w-6 h-6 text-white" />
+                    <Bot className="w-5 h-5 md:w-6 md:h-6 text-white" />
                   </AvatarFallback>
                 </Avatar>
               )}
 
               <div
                 className={cn(
-                  "p-4 rounded-2xl max-w-[85%] shadow-sm relative group",
+                  "p-3 md:p-4 rounded-2xl max-w-[85%] md:max-w-[85%] shadow-sm relative group text-sm md:text-base",
                   message.isUser
                     ? "bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-tr-none"
                     : "bg-white border border-gray-100 text-gray-800 rounded-tl-none"
                 )}
               >
-                <div className={cn("prose prose-sm max-w-none break-words", message.isUser ? "prose-invert" : "")}>
+                <div className={cn("prose prose-sm max-w-none break-words dark:prose-invert", message.isUser ? "text-white prose-headings:text-white prose-p:text-white prose-strong:text-white" : "")}>
                   <ReactMarkdown
                     components={{
                       code: ({ node, className, children, ...props }: any) => {
-                        return <code className={className} {...props}>{children}</code>;
+                        return <code className={cn(className, "bg-black/10 px-1 py-0.5 rounded")} {...props}>{children}</code>;
                       }
                     }}
                   >
@@ -395,11 +388,11 @@ export default function ChatPage() {
                 </div>
                 
                 {message.files && message.files.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {message.files.map((file, i) => (
-                      <div key={i} className="bg-white/10 p-2 rounded-lg flex items-center gap-2 text-xs border border-white/20">
+                      <div key={i} className="bg-white/10 p-1.5 rounded-md flex items-center gap-2 text-xs border border-white/20">
                         <FileIcon className="w-3 h-3" />
-                        <span className="truncate max-w-[100px]">{file.name}</span>
+                        <span className="truncate max-w-[80px] md:max-w-[100px]">{file.name}</span>
                       </div>
                     ))}
                   </div>
@@ -407,9 +400,9 @@ export default function ChatPage() {
               </div>
 
               {message.isUser && (
-                <Avatar className="w-10 h-10 border-2 border-white shadow-md">
+                <Avatar className="w-8 h-8 md:w-10 md:h-10 border-2 border-white shadow-md mb-1 md:mb-0">
                   <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500">
-                    <User className="w-6 h-6 text-white" />
+                    <User className="w-5 h-5 md:w-6 md:h-6 text-white" />
                   </AvatarFallback>
                 </Avatar>
               )}
@@ -418,128 +411,129 @@ export default function ChatPage() {
 
           {/* LOADING INDICATOR */}
           {isLoading && (
-            <div className="flex items-start gap-3">
-              <Avatar className="w-10 h-10">
-                <AvatarFallback><Bot className="w-6 h-6" /></AvatarFallback>
+            <div className="flex items-end gap-2">
+              <Avatar className="w-8 h-8">
+                <AvatarFallback><Bot className="w-5 h-5" /></AvatarFallback>
               </Avatar>
-              <div className="bg-white border border-blue-100 rounded-2xl px-4 py-3 shadow-md flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200"></div>
-                <span className="text-sm text-muted-foreground">Đang suy nghĩ...</span>
+              <div className="bg-white border border-blue-100 rounded-2xl px-3 py-2 shadow-md flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></div>
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-100"></div>
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-200"></div>
               </div>
             </div>
           )}
           
           {geogebraSuggestion && (
             <Card className="border-blue-200 bg-white/90 shadow-md">
-              <CardHeader className="flex flex-row items-center justify-between py-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Compass className="w-4 h-4 text-blue-600" /> GeoGebra Gợi ý
+              <CardHeader className="flex flex-row items-center justify-between py-2 md:py-3 px-3 md:px-4">
+                <CardTitle className="text-xs md:text-sm flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-blue-600" /> Gợi ý đồ thị
                 </CardTitle>
-                <Button size="sm" onClick={() => setIsModalOpen(true)}>Mở GeoGebra</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsModalOpen(true)}>Mở ngay</Button>
               </CardHeader>
             </Card>
           )}
 
-          {mindmapUpdates.length > 0 && (
-            <Card className="border-amber-200 bg-amber-50/70 shadow-md">
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Share2 className="w-4 h-4 text-amber-500" /> Mindmap Update
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="py-2">
-                <Button asChild variant="outline" size="sm"><Link href="/mindmap">Xem Mindmap</Link></Button>
-              </CardContent>
-            </Card>
-          )}
-          
           <div ref={endRef} />
         </div>
       </div>
 
-      {/* INPUT AREA */}
-      <div ref={inputContainerRef} className="fixed bottom-0 left-0 right-0 p-3 sm:px-4 sm:py-4 bg-white border-t border-blue-100 z-10 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+      {/* INPUT AREA: Tối ưu cho mobile */}
+      <div ref={inputContainerRef} className="fixed md:absolute bottom-0 left-0 right-0 p-2 md:p-4 bg-white border-t border-blue-100 z-10 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
         
         {/* FILES PREVIEW */}
         {attachedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
+          <div className="flex flex-wrap gap-2 mb-2 max-h-20 overflow-y-auto">
             {attachedFiles.map((file, index) => (
-              <div key={index} className="bg-blue-50 px-3 py-1 rounded-lg text-xs flex items-center gap-2 border border-blue-200">
-                <FileIcon className="w-3 h-3 text-blue-600" />
-                <span className="truncate max-w-[100px]">{file.name}</span>
-                <button onClick={() => removeFile(index)}><X className="w-3 h-3 text-red-500" /></button>
+              <div key={index} className="bg-blue-50 px-2 py-1 rounded-md text-xs flex items-center gap-1 border border-blue-200 max-w-[150px]">
+                <FileIcon className="w-3 h-3 text-blue-600 shrink-0" />
+                <span className="truncate flex-1">{file.name}</span>
+                <button onClick={() => removeFile(index)} className="p-1"><X className="w-3 h-3 text-red-500" /></button>
               </div>
             ))}
           </div>
         )}
 
         {/* MAIN INPUT ROW */}
-        <div className="flex gap-2 items-end">
-          {/* UPLOAD BUTTON */}
+        <div className="flex gap-1.5 md:gap-2 items-end">
           <input
             type="file" multiple accept="image/*"
             ref={fileInputRef} onChange={handleFileChange} className="hidden"
           />
-          <Button
-            type="button" variant="ghost"
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-          >
-            <Paperclip className="w-5 h-5" />
-          </Button>
 
-          {/* Nút Camera */}
-          <Button
+          {/* GROUP BUTTONS ON MOBILE */}
+          <div className={cn("flex gap-1.5 md:gap-2", isMobile ? (isMobileToolsOpen ? "flex" : "hidden") : "flex")}>
+             <Button
+                type="button" variant="ghost"
+                className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-600 p-0"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                title="Đính kèm file"
+              >
+                <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
+              </Button>
+
+              {/* SIGMA POPOVER */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="ghost" className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-600 p-0">
+                    <Sigma className="w-4 h-4 md:w-5 md:h-5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[90vw] md:w-80 p-3 md:p-4 mb-2" align="start">
+                  <div className="space-y-4 max-h-[40vh] overflow-y-auto">
+                    {latexSymbols.map((group) => (
+                      <div key={group.label}>
+                        <h4 className="font-medium text-xs text-muted-foreground mb-1 uppercase">{group.label}</h4>
+                        <div className="grid grid-cols-5 gap-1">
+                          {group.symbols.map((symbol) => (
+                            <Button
+                              key={symbol.display} variant="ghost" size="sm"
+                              className="h-8 text-base font-serif"
+                              onClick={() => handleInsertSymbol(symbol.insert)} 
+                            >
+                              {symbol.display}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+          </div>
+
+          {/* Nút Toggle Menu trên Mobile (Thay thế cho các nút bị ẩn) */}
+          {isMobile && !isMobileToolsOpen && (
+             <Button
+             type="button" variant="ghost"
+             className="flex-shrink-0 w-9 h-9 rounded-xl bg-gray-50 text-gray-600 p-0"
+             onClick={() => setIsMobileToolsOpen(true)}
+           >
+             <Plus className="w-5 h-5" />
+           </Button>
+          )}
+
+           {/* Camera luôn hiển thị vì quan trọng */}
+           <Button
             type="button" variant="ghost"
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-blue-600"
+            className="flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-xl bg-blue-50 text-blue-600 p-0 hover:bg-blue-100"
             onClick={() => setIsCameraOpen(true)}
             disabled={isLoading}
             title="Chụp ảnh bài tập"
           >
-            <Camera className="w-5 h-5" />
+            <Camera className="w-5 h-5 md:w-5 md:h-5" />
           </Button>
 
-          {/* SIGMA POPOVER */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="ghost" className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600">
-                <Sigma className="w-5 h-5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-4">
-              <div className="space-y-4">
-                {latexSymbols.map((group) => (
-                  <div key={group.label}>
-                    <h4 className="font-medium text-xs text-muted-foreground mb-2 uppercase">{group.label}</h4>
-                    <div className="grid grid-cols-5 gap-1">
-                      {group.symbols.map((symbol) => (
-                        <Button
-                          key={symbol.display} variant="ghost" size="sm"
-                          className="h-8 text-lg font-serif"
-                          onClick={() => handleInsertSymbol(symbol.insert)} 
-                        >
-                          {symbol.display}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-
           {/* MATH INPUT */}
-          <div className="flex-1 min-w-0 bg-blue-50 rounded-2xl border-2 border-blue-200 focus-within:border-blue-400 focus-within:bg-white transition-all">
+          <div className="flex-1 min-w-0 bg-blue-50/50 rounded-xl md:rounded-2xl border border-blue-200 focus-within:border-blue-400 focus-within:bg-white transition-all">
             <MathInput
               ref={mathFieldRef}
               value={input}
               onChange={setInput}
               onEnter={handleSend}
-              placeholder="Nhập câu hỏi hoặc chụp ảnh..."
-              className="w-full"
+              placeholder={isMobile ? "Nhập câu hỏi..." : "Nhập câu hỏi hoặc chụp ảnh..."}
+              className="w-full text-sm md:text-base px-2 py-1 md:px-3 md:py-2"
             />
           </div>
 
@@ -547,21 +541,26 @@ export default function ChatPage() {
           <Button
             type="button"
             onClick={() => handleSend()}
-            className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl shadow-lg"
+            className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl shadow-md p-0"
             disabled={isLoading || (!input.trim() && attachedFiles.length === 0)}
           >
-            <Send className="w-5 h-5" />
+            <Send className="w-4 h-4 md:w-5 md:h-5" />
           </Button>
         </div>
         
-        <p className="text-[10px] text-gray-400 mt-2 text-center">
+        {/* Hint chỉ hiện trên PC để tiết kiệm chỗ */}
+        <p className="hidden md:block text-[10px] text-gray-400 mt-2 text-center">
           Shift + Enter xuống dòng • Hỗ trợ LaTeX
         </p>
       </div>
 
-      {/* FLOATING BUTTON GEOGEBRA */}
-      <Button onClick={() => setIsModalOpen(true)} size="lg" className="h-auto fixed bottom-32 right-6 w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-full shadow-lg z-40 hover:scale-110 transition-transform">
-        <Compass className="w-6 h-6" />
+      {/* FLOATING BUTTON GEOGEBRA: Dời vị trí cao hơn để tránh bàn phím */}
+      <Button 
+        onClick={() => setIsModalOpen(true)} 
+        size="lg" 
+        className="fixed bottom-20 md:bottom-32 right-4 md:right-6 w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-full shadow-lg z-30 hover:scale-110 transition-transform p-0"
+      >
+        <Compass className="w-5 h-5 md:w-6 md:h-6" />
       </Button>
 
       <GeoGebraModal
@@ -572,7 +571,6 @@ export default function ChatPage() {
         onConsumeAutoCommands={() => setGeogebraSuggestion(prev => prev ? { ...prev, consumed: true } : prev)}
       />
 
-      {/* Modal Camera */}
       <CameraCaptureDialog 
         open={isCameraOpen} 
         onOpenChange={setIsCameraOpen}

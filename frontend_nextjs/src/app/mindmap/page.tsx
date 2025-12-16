@@ -6,33 +6,36 @@ import { NodeDetailDialog } from "@/components/mind-map/node-detail-dialog";
 import { mindMapData } from "@/lib/mindmap-data";
 import type { MindMapNode } from "@/types/mindmap";
 
-import {
-  getNodeProgress,
-  openNode,
-  NodeProgress,
-} from "@/lib/nodeProgressApi";
+// Import hàm xử lý storage để lấy kiến thức mới từ Chat
+import { loadStoredMindmapInsights, mergeMindmapWithInsights } from "@/lib/mindmap-storage";
+
+import { getNodeProgress } from "@/lib/nodeProgressApi";
+import type { NodeProgress } from "@/lib/nodeProgressApi";
 
 import { useUser } from "@/supabase/auth/use-user";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Network, 
-  ListTree, 
-  ArrowLeft, 
-  CheckCircle2, 
-  Circle, 
-  ChevronRight, 
-  ChevronDown, 
+import {
+  Network,
+  ListTree,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  ChevronDown,
   BookOpen,
-  PlayCircle
+  PlayCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// =================================================
-// COMPONENT: LEARNING PATH ITEM
-// =================================================
+// --- 1. ĐỊNH NGHĨA INTERFACE QUAN TRỌNG ---
 interface LearningPathItemProps {
   node: MindMapNode;
   level: number;
@@ -40,16 +43,23 @@ interface LearningPathItemProps {
   onNodeClick: (node: MindMapNode) => void;
 }
 
-const LearningPathItem = ({ node, level, progress, onNodeClick }: LearningPathItemProps) => {
+// --- 2. COMPONENT ĐỆ QUY HIỂN THỊ CÂY THƯ MỤC ---
+const LearningPathItem = ({
+  node,
+  level,
+  progress,
+  onNodeClick,
+}: LearningPathItemProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Kiểm tra an toàn xem node có con không
   const hasChildren = node.children && node.children.length > 0;
   
-  // Logic hiển thị icon dựa trên node_color
   const nodeProg = progress[node.id];
-  const color = nodeProg?.node_color ?? 0;
+  const bestScore = nodeProg?.max_score ?? nodeProg?.score ?? 0;
   
-  const isMastered = color === 2; // Green
-  const isLearning = color === 1; // Yellow
+  const isMastered = bestScore >= 80; // Xanh Lá
+  const isLearning = !isMastered; // Vàng (mặc định)
 
   const handleRowClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -67,8 +77,7 @@ const LearningPathItem = ({ node, level, progress, onNodeClick }: LearningPathIt
 
   const StatusIcon = () => {
     if (isMastered) return <CheckCircle2 className="w-5 h-5 text-green-500 fill-green-100" />;
-    if (isLearning) return <PlayCircle className="w-5 h-5 text-yellow-500 fill-yellow-100" />;
-    return <Circle className="w-5 h-5 text-gray-300" />;
+    return <PlayCircle className="w-5 h-5 text-yellow-500 fill-yellow-100" />;
   };
 
   return (
@@ -110,12 +119,17 @@ const LearningPathItem = ({ node, level, progress, onNodeClick }: LearningPathIt
             <BookOpen className="w-4 h-4 text-blue-500" />
         </Button>
       </div>
+      
+      {/* Render các node con nếu đang mở */}
       {isOpen && hasChildren && (
         <div className="border-l border-dashed border-gray-200 ml-5 pl-1 animate-in slide-in-from-top-2 duration-200">
-          {node.children.map((child) => (
+          {node.children?.map((child: MindMapNode) => (
             <LearningPathItem 
-              key={child.id} node={child} level={level + 1} 
-              progress={progress} onNodeClick={onNodeClick}
+              key={child.id} 
+              node={child} 
+              level={level + 1} 
+              progress={progress} 
+              onNodeClick={onNodeClick}
             />
           ))}
         </div>
@@ -124,9 +138,7 @@ const LearningPathItem = ({ node, level, progress, onNodeClick }: LearningPathIt
   );
 };
 
-// =================================================
-// MAIN PAGE COMPONENT
-// =================================================
+// --- 3. TRANG CHÍNH ---
 export default function MindmapPage() {
   const { user } = useUser();
   const userId = user?.id || "";
@@ -137,7 +149,23 @@ export default function MindmapPage() {
   const [progress, setProgress] = useState<Record<string, NodeProgress>>({});
   const [loading, setLoading] = useState(true);
 
-  // LOAD PROGRESS
+  // State lưu cây dữ liệu đã được merge với insights mới
+  const [treeData, setTreeData] = useState<MindMapNode>(mindMapData);
+
+  // Effect tải insights từ localStorage và merge vào cây
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+        const storedInsights = loadStoredMindmapInsights();
+        if (storedInsights && storedInsights.length > 0) {
+          console.log("Found stored insights, merging...", storedInsights);
+          const merged = mergeMindmapWithInsights(mindMapData, storedInsights);
+          setTreeData(merged);
+        } else {
+          setTreeData(mindMapData);
+        }
+    }
+  }, []);
+
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
@@ -153,33 +181,12 @@ export default function MindmapPage() {
     load();
   }, [userId]);
 
-  // HANDLE NODE CLICK (LOGIC QUAN TRỌNG)
   async function handleNodeClick(node: MindMapNode) {
     setSelectedNode(node);
-
-    // Lấy trạng thái hiện tại từ danh sách đã tải
-    const currentStatus = progress[node.id];
-
-    // Logic mới:
-    // Nếu chưa có dữ liệu (undefined) HOẶC đang là màu Xanh Dương (0)
-    // -> Gọi API openNode để chuyển sang màu Vàng (1)
-    if (!currentStatus || currentStatus.node_color === 0) {
-      try {
-        const updated = await openNode(userId, node.id);
-        
-        // Cập nhật State ngay lập tức để UI đổi màu
-        setProgress((prev) => ({
-          ...prev,
-          [node.id]: updated,
-        }));
-      } catch (error) {
-        console.error("Lỗi khi mở node:", error);
-      }
-    }
-    // Nếu node_color đã là 1 (Vàng) hoặc 2 (Xanh lá) thì KHÔNG gọi lại để tránh reset
   }
 
-  const subjects = useMemo(() => mindMapData.children || [], []);
+  // Dùng treeData thay vì mindMapData gốc để có các node mới
+  const subjects = useMemo(() => treeData.children || [], [treeData]);
 
   if (loading) return (
     <div className="w-full h-full flex items-center justify-center bg-slate-50">
@@ -192,6 +199,34 @@ export default function MindmapPage() {
 
   return (
     <div className="w-full h-full relative bg-slate-50/50">
+
+      <div className="w-full max-w-6xl mx-auto px-4 pt-6 grid gap-3 md:grid-cols-3">
+        <Card className="md:col-span-2 bg-white/80 backdrop-blur">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Trạng thái node - Lộ trình học</CardTitle>
+            <CardDescription>
+              Trong chế độ <strong>Lộ trình học</strong>: Tất cả node mặc định màu vàng (đang học). Sau khi làm bài kiểm tra đạt ≥ 80 điểm, node sẽ chuyển sang màu xanh lá (đã thành thạo).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <PlayCircle className="w-4 h-4 text-yellow-500" /> Đang học (mặc định)
+            </div>
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <CheckCircle2 className="w-4 h-4 text-green-500" /> Đã thành thạo (≥ 80 điểm)
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-50 border-blue-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-blue-800">Sơ đồ tư duy</CardTitle>
+            <CardDescription className="text-blue-700">
+              Trong chế độ <strong>Sơ đồ tư duy</strong>: Node giữ màu xanh dương mặc định, không thay đổi theo điểm số.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
       
       {viewMode === 'path' && (
         <div className="w-full h-full max-w-4xl mx-auto p-4 md:p-6 overflow-hidden flex flex-col">
@@ -204,14 +239,14 @@ export default function MindmapPage() {
           </div>
           <ScrollArea className="flex-1 pr-4 -mr-4">
              <div className="pb-24 pl-1">
-                {subjects.map(subject => (
+                {subjects.map((subject: MindMapNode) => (
                   <div key={subject.id} className="mb-8">
                     <h2 className="text-xl font-bold text-slate-700 mb-4 flex items-center gap-2">
                       <span className="w-1.5 h-6 bg-blue-500 rounded-full inline-block"></span>
                       {subject.label}
                     </h2>
                     <div className="space-y-1">
-                        {subject.children.map(chapter => (
+                        {subject.children?.map((chapter: MindMapNode) => (
                         <LearningPathItem 
                             key={chapter.id} node={chapter} level={0}
                             progress={progress} onNodeClick={handleNodeClick}
@@ -236,17 +271,21 @@ export default function MindmapPage() {
                         </div>
                         <Tabs defaultValue={subjects[0]?.id} className="w-full">
                             <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-8 h-12 p-1 bg-slate-200/50">
-                                {subjects.map(sub => (
+                                {subjects.map((sub: MindMapNode) => (
                                     <TabsTrigger key={sub.id} value={sub.id} className="h-full text-base">{sub.label}</TabsTrigger>
                                 ))}
                             </TabsList>
-                            {subjects.map(subject => (
+                            {subjects.map((subject: MindMapNode) => (
                                 <TabsContent key={subject.id} value={subject.id}>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {subject.children.map(chapter => {
+                                        {subject.children?.map((chapter: MindMapNode) => {
                                             const totalNodes = chapter.children?.length || 0;
-                                            // Đếm số lượng node Xanh Lá (2)
-                                            const completedNodes = chapter.children?.filter(c => progress[c.id]?.node_color === 2).length || 0;
+                                            const completedNodes = chapter.children?.filter((c: MindMapNode) => {
+                                              const p = progress[c.id];
+                                              const score = p?.max_score ?? p?.score ?? 0;
+                                              return score >= 80;
+                                            }).length || 0;
+                                            
                                             return (
                                                 <Card key={chapter.id} className="cursor-pointer hover:shadow-lg transition-all group border-slate-200 hover:border-blue-400" onClick={() => setSelectedChapter(chapter)}>
                                                     <CardHeader className="pb-3">

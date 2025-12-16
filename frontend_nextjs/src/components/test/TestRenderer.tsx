@@ -1,7 +1,7 @@
 'use client';
 
 import { updateNodeScore } from "@/lib/nodeProgressApi";
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/supabase/auth/use-user';
 import { useSupabase } from '@/supabase';
@@ -20,6 +20,9 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Loader, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// 🔹 THÊM: cache đề theo từng attempt
+import { saveTestResultToCache } from '@/lib/answer-review-cache';
 
 function normalizeType(type: string) {
   const t = type?.toLowerCase() || "";
@@ -122,7 +125,7 @@ export function TestRenderer({
 
   const handlePreviousQuestion = () => {
     if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      setCurrentQuestionIndex(prev => prev - 1);
     }
   };
 
@@ -169,16 +172,14 @@ export function TestRenderer({
         };
       });
 
-      // 🔥 FIX: Làm tròn điểm số để đẹp (ví dụ 33.333 -> 33)
+      // Làm tròn điểm
       const rawScore = correctCount * questionScore;
       const score = Math.round(rawScore); 
 
-      // 🔥 FIX QUAN TRỌNG: Gọi Update Score Node NGAY LẬP TỨC
-      // Để đảm bảo dù AI server có lỗi thì điểm Mindmap vẫn được cập nhật
+      // Cập nhật node score (nếu là bài mindmap)
       if (isNodeTest && user && nodeId) {
         updateNodeScore(user.id, nodeId, score).catch(err => {
           console.error("⚠️ Lỗi ngầm khi update node score:", err);
-          // Không throw lỗi ở đây để user vẫn xem được kết quả bài thi
         });
       }
 
@@ -214,7 +215,7 @@ export function TestRenderer({
         submittedAt: completedAt,
       };
 
-      // BƯỚC 2: Thống kê Topic yếu
+      // BƯỚC 2: Thống kê Topic yếu local
       const topicStats = new Map<string, { correct: number, total: number }>();
       for (const answer of answeredQuestions) {
         const answerTopic = (answer as any).topic || topic;
@@ -242,15 +243,13 @@ export function TestRenderer({
       });
       localWeakTopics.sort((a, b) => a.accuracy - b.accuracy);
       
-      // BƯỚC 3: Gửi dữ liệu AI
+      // BƯỚC 3: Gửi dữ liệu cho AI phân tích
       const analysisRequest = {
         userId: fullAttempt.userId,
         testAttempt: fullAttempt,
         weakTopics: localWeakTopics
       };
 
-      console.log('📊 Gửi dữ liệu để AI phân tích:', analysisRequest);
-      
       const response = await fetch(`${API_BASE_URL}/api/analyze-test-result`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -263,17 +262,26 @@ export function TestRenderer({
       }
       
       const aiAnalysis: AiAnalysisResult = await response.json();
-      console.log('✅ AI đã phân tích:', aiAnalysis);
 
-      // BƯỚC 4: Lưu lịch sử
+      // BƯỚC 4: Lưu lịch sử + LƯU CACHE ĐỀ THEO ATTEMPT
       let persistedAttempt = fullAttempt;
       if (supabase && user) {
         try {
           setIsSavingHistory(true);
           const historyService = new TestHistoryService(supabase);
           const { id: _localId, submittedAt: _submittedAt, ...attemptPayload } = fullAttempt;
+
+          // Lưu attempt vào Supabase → nhận về attemptId thật
           const attemptId = await historyService.saveTestAttempt(attemptPayload);
           persistedAttempt = { ...fullAttempt, id: attemptId };
+
+          // 🔹 RẤT QUAN TRỌNG:
+          // Lưu snapshot đề dùng cho trang /test-result/[attemptId]/answer
+          saveTestResultToCache(attemptId, {
+            test: testData,
+            topic,
+            difficulty,
+          });
 
           const summaryLines = [
             aiAnalysis.analysis ? `Đánh giá: ${aiAnalysis.analysis}` : null,

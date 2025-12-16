@@ -62,6 +62,56 @@ import { useSupabase } from '@/supabase';
 import { TestHistoryService } from '@/services/test-history.service';
 import type { TestAnalysis, TestAttempt } from '@/types/test-history';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { API_BASE_URL } from '@/lib/utils';
+
+
+const STUDENT_PROFILE_TIMEOUT_MS = 12000;
+
+function buildStudentProfileUrl(userId: string) {
+  const base = API_BASE_URL.replace(/\/$/, '');
+  // Thực tế dự án hay cấu hình API_BASE_URL = ".../api".
+  // Trong khi router student_profile hiện đang mount ở root ("/student-profile").
+  // Vì vậy: nếu base kết thúc bằng "/api" thì bỏ "/api" đi để tránh 404.
+  const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base;
+  return `${normalizedBase}/student-profile/${userId}`;
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number = STUDENT_PROFILE_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readResponseError(res: Response): Promise<string> {
+  let raw = '';
+  try {
+    raw = await res.text();
+  } catch {
+    raw = '';
+  }
+
+  if (!raw) return `HTTP ${res.status}`;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const detail = parsed?.detail ?? parsed?.message;
+    if (detail) return `HTTP ${res.status}: ${String(detail)}`;
+  } catch {
+    // ignore JSON parse
+  }
+
+  return `HTTP ${res.status}: ${raw}`;
+}
 
 const masteryConfig: ChartConfig = {
   advanced: { label: 'Nắm vững', color: 'hsl(var(--primary))' },
@@ -99,6 +149,33 @@ type AiAssessment = {
   bulletPoints: string[];
 };
 
+type StudyStatus = {
+  level: 'unknown' | 'good' | 'warning' | 'critical';
+  label: string;
+  message: string;
+  recommendations?: string[];
+  completionRatePct?: number | null;
+};
+
+type StudentProfileResponse = {
+  userId: string;
+  targetScore: number | null;
+  goalText: string | null;
+  performance?: {
+    averageScore?: number | null;
+    completionRate?: number | null;
+    totalTests?: number | null;
+  };
+  studyStatus?: StudyStatus | null;
+};
+
+function badgeVariantForLevel(level: StudyStatus['level']): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (level === 'good') return 'default';
+  if (level === 'warning') return 'secondary';
+  if (level === 'critical') return 'destructive';
+  return 'outline';
+}
+
 export default function UserPage() {
   const { user, isUserLoading } = useUser();
   const { client: supabase, isInitialized, error: supabaseError } = useSupabase();
@@ -108,15 +185,12 @@ export default function UserPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mục tiêu học tập (FE-only)
-  const [goalInput, setGoalInput] = useState('');
-  const [confirmedGoal, setConfirmedGoal] = useState<string | null>(null);
-
-  const handleSaveGoal = () => {
-    const trimmed = goalInput.trim();
-    if (!trimmed) return;
-    setConfirmedGoal(trimmed);
-  };
+  // === NEW: Profile goal (backend persisted) ===
+  const [targetScoreInput, setTargetScoreInput] = useState<string>('');
+  const [goalTextInput, setGoalTextInput] = useState<string>('');
+  const [studyStatus, setStudyStatus] = useState<StudyStatus | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isUserLoading || !isInitialized) return;
@@ -157,6 +231,89 @@ export default function UserPage() {
 
     loadData();
   }, [isUserLoading, isInitialized, supabase, supabaseError, user]);
+
+  // === NEW: Load goal/profile from backend ===
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    (async () => {
+      setProfileError(null);
+      try {
+        const profileUrl = buildStudentProfileUrl(user.id);
+        const res = await fetchWithTimeout(profileUrl, { method: 'GET' });
+        if (!res.ok) {
+          if (!cancelled) setProfileError(await readResponseError(res));
+          return;
+        }
+
+        const data: StudentProfileResponse = await res.json();
+        if (cancelled) return;
+
+        if (typeof data.targetScore === 'number') setTargetScoreInput(String(data.targetScore));
+        if (typeof data.goalText === 'string') setGoalTextInput(data.goalText);
+
+        if (data.studyStatus) setStudyStatus(data.studyStatus);
+      } catch (e) {
+        // Không chặn UI nếu backend chưa bật endpoint
+        if (e instanceof Error && e.name === 'AbortError') {
+          if (!cancelled) setProfileError('Không thể tải mục tiêu: request timeout.');
+        } else {
+          if (!cancelled) setProfileError('Không thể tải mục tiêu từ backend.');
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+
+    setIsSavingProfile(true);
+    setProfileError(null);
+
+    try {
+      const trimmed = targetScoreInput.trim();
+      const targetScore = trimmed === '' ? null : Number(trimmed);
+
+      if (targetScore !== null && (!Number.isFinite(targetScore) || targetScore < 0 || targetScore > 100)) {
+        setProfileError('Mục tiêu điểm phải là số trong khoảng 0–100.');
+        return;
+      }
+
+      const payload = {
+        targetScore,
+        goalText: goalTextInput,
+      };
+
+      const profileUrl = buildStudentProfileUrl(user.id);
+
+      const res = await fetchWithTimeout(profileUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        setProfileError(await readResponseError(res));
+        return;
+      }
+
+      const data: StudentProfileResponse = await res.json();
+      if (typeof data.targetScore === 'number') setTargetScoreInput(String(data.targetScore));
+      if (typeof data.goalText === 'string') setGoalTextInput(data.goalText);
+      setStudyStatus(data.studyStatus ?? null);
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        setProfileError('Không thể lưu mục tiêu: request timeout. Vui lòng thử lại.');
+      } else {
+        setProfileError('Không thể lưu mục tiêu. Vui lòng thử lại.');
+      }
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const topicStats = useMemo<Record<string, TopicStat>>(() => {
     const stats: Record<string, TopicStat> = {};
@@ -201,7 +358,6 @@ export default function UserPage() {
 
       if (strong.length > 0) return strong;
 
-      // Fallback: Top 3 topics with accuracy >= 50
       return topicEntries
         .filter((entry) => entry.accuracy >= 50)
         .sort((a, b) => b.accuracy - a.accuracy)
@@ -278,7 +434,6 @@ export default function UserPage() {
     ? attempts.reduce((sum, attempt) => sum + attempt.score, 0) / totalTests
     : 0;
 
-  // Đánh giá điểm mạnh – yếu, khả năng cần cải thiện / phát huy
   const aiAssessment: AiAssessment = useMemo(() => {
     const strongCount = strengthTopics.length;
     const practicingCount = practicingTopics.length;
@@ -661,7 +816,7 @@ export default function UserPage() {
 
         {/* Mục tiêu học tập & Đánh giá của AI */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Khung 1: Mục tiêu học tập */}
+          {/* Khung 1: Mục tiêu học tập (backend persisted) */}
           <Card>
             <CardHeader className="space-y-1">
               <div className="flex items-center justify-between gap-2">
@@ -669,45 +824,89 @@ export default function UserPage() {
                   <Target className="w-5 h-5 text-primary" />
                   <span>Mục tiêu học tập</span>
                 </CardTitle>
-                <Badge variant="outline" className="text-xs">
-                  FE-only • sẽ lưu backend sau
-                </Badge>
-              </div>
-              <CardDescription>
-                Viết ngắn gọn mục tiêu ôn luyện (điểm mong muốn, khối thi, chủ đề muốn tập trung...).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                value={goalInput}
-                onChange={(e) => setGoalInput(e.target.value)}
-                placeholder="Ví dụ: Đạt 8.0+ Toán THPTQG, làm chắc hàm số và tích phân trong 2 tháng tới..."
-                className="min-h-[110px] resize-none"
-              />
 
-              <div className="flex items-center justify-between gap-3">
-                <Button size="sm" onClick={handleSaveGoal}>
-                  Lưu mục tiêu
-                </Button>
-
-                {confirmedGoal && (
-                  <p className="flex items-center gap-1 text-xs text-emerald-600">
-                    <Sparkles className="w-4 h-4" />
-                    AI đã cập nhật mục tiêu của bạn.
-                  </p>
+                {studyStatus ? (
+                  <Badge variant={badgeVariantForLevel(studyStatus.level)} className="text-xs">
+                    {studyStatus.label}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs">Chưa đánh giá</Badge>
                 )}
               </div>
 
-              {confirmedGoal && (
-                <div className="mt-1 rounded-lg border border-emerald-100 bg-emerald-50/70 p-3">
-                  <p className="text-[11px] font-semibold text-emerald-800 mb-1">Mục tiêu hiện tại</p>
-                  <p className="text-sm text-emerald-900 whitespace-pre-wrap">{confirmedGoal}</p>
+              <CardDescription>
+                Nhập <b>mục tiêu điểm (0–100)</b> và mục tiêu ôn luyện. Dữ liệu này được lưu backend để AI Chat và luyện đề cá nhân hoá.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Mục tiêu điểm (0–100)</p>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={targetScoreInput}
+                    onChange={(e) => setTargetScoreInput(e.target.value)}
+                    placeholder="Ví dụ: 85"
+                  />
+                  <p className="text-xs text-muted-foreground">AI sẽ điều chỉnh độ khó đề và cách hướng dẫn theo mục tiêu này.</p>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">Tóm tắt tình hình học</p>
+                  <p className="text-sm mt-1">
+                    {studyStatus?.message ?? 'Chưa có đánh giá từ backend.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Mục tiêu học tập (ghi chú)</p>
+                <Textarea
+                  value={goalTextInput}
+                  onChange={(e) => setGoalTextInput(e.target.value)}
+                  placeholder="Ví dụ: Đạt 8.0+ Toán THPTQG; chắc hàm số, mũ-log; giảm lỗi tính toán..."
+                  className="min-h-[110px] resize-none"
+                />
+              </div>
+
+              {profileError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  {profileError}
                 </div>
               )}
+
+              <div className="flex items-center justify-between gap-3">
+                <Button size="sm" onClick={handleSaveProfile} disabled={isSavingProfile}>
+                  {isSavingProfile ? 'Đang lưu...' : 'Lưu mục tiêu'}
+                </Button>
+
+                {studyStatus?.recommendations?.length ? (
+                  <p className="text-xs text-muted-foreground">
+                    Có {studyStatus.recommendations.length} gợi ý cải thiện
+                  </p>
+                ) : null}
+              </div>
+
+              {studyStatus?.recommendations?.length ? (
+                <div className="mt-1 rounded-lg border bg-background p-3">
+                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+                    Gợi ý để cải thiện
+                  </p>
+                  <ul className="space-y-1.5 text-sm text-slate-700 list-disc list-inside">
+                    {studyStatus.recommendations.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
-          {/* Khung 2: Đánh giá của AI */}
+          {/* Khung 2: Đánh giá của AI (giữ nguyên logic cũ) */}
           <Card>
             <CardHeader className="space-y-1">
               <div className="flex items-center justify-between gap-2">
@@ -755,6 +954,7 @@ export default function UserPage() {
                   </p>
                 </div>
               </div>
+
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                   Điểm mạnh & cần cải thiện
