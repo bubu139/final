@@ -3,7 +3,7 @@ import genkit.ai as ai
 from genkit import flow
 from ..ai_schemas.geogebra_schema import GeogebraInputSchema, GeogebraOutputSchema
 
-MODEL = "gemini-1.5-flash"
+MODEL = "models/gemini-1.5-flash"
 GEOGEBRA_PROMPT = """Bạn là một AI gia sư toán học THPT lớp 12 Việt Nam... (sao chép toàn bộ nội dung prompt từ tệp geogebra-flow.ts của bạn vào đây) ... "Một AI gia sư giỏi không phải là người giải bài nhanh nhất, mà là người giúp học sinh TỰ TIN giải bài một mình!" 🎓"""
 
 @ai.prompt
