@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from ..ai_schemas.test_schema import TestSchema
 from typing import Literal # 👈 Thêm Literal
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-1.5-flash"
 
 class GenerateTestInput(BaseModel):
     topic: str = Field(description='The topic to generate a test for.')
